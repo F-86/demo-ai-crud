@@ -13,14 +13,39 @@ def get_connection():
 def init_db():
     conn = get_connection()
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS chat_messages (
+        CREATE TABLE IF NOT EXISTS chat_sessions (
             id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            role    TEXT NOT NULL CHECK(role IN ('user','ai')),
-            text    TEXT NOT NULL,
-            hitl    TEXT,
-            created TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            title   TEXT NOT NULL DEFAULT '新对话',
+            created TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+            role       TEXT NOT NULL CHECK(role IN ('user','ai')),
+            text       TEXT NOT NULL,
+            hitl       TEXT,
+            created    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+
+    # 迁移：旧表没有 session_id 列时，重建表
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(chat_messages)").fetchall()]
+    if "session_id" not in cols:
+        conn.execute("DROP TABLE chat_messages")
+        conn.execute("""
+            CREATE TABLE chat_messages (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                role       TEXT NOT NULL CHECK(role IN ('user','ai')),
+                text       TEXT NOT NULL,
+                hitl       TEXT,
+                created    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )
+        """)
+        conn.commit()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

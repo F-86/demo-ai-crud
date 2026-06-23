@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 const SUGGESTIONS = ['查一下所有商品', '帮我添加一个商品', '修改商品信息', '删除一个商品'];
 
-function AIChat({ api }) {
+function AIChat({ api, sessionId, onTitleUpdate }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [pendingHITL, setPendingHITL] = useState(null);
@@ -12,15 +12,16 @@ function AIChat({ api }) {
   const textareaRef = useRef(null);
 
   const loadHistory = useCallback(async () => {
+    setHistoryLoaded(false);
     try {
-      const res = await fetch(`${api}/api/chat/history`);
+      const res = await fetch(`${api}/api/chat/sessions/${sessionId}/messages`);
       const data = await res.json();
       setMessages(data.map(m => ({ role: m.role, text: m.text, hitl: m.hitl || null })));
     } catch {
-      // 静默失败
+      setMessages([]);
     }
     setHistoryLoaded(true);
-  }, [api]);
+  }, [api, sessionId]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
@@ -37,6 +38,7 @@ function AIChat({ api }) {
 
   const sendMessage = async (text) => {
     if (!text.trim() || loading) return;
+    const isFirst = messages.length === 0;
     setMessages(prev => [...prev, { role: 'user', text }]);
     setInput('');
     setTimeout(autoResize, 0);
@@ -47,9 +49,14 @@ function AIChat({ api }) {
       const res = await fetch(`${api}/api/skill/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ message: text, session_id: sessionId })
       });
       const data = await res.json();
+
+      if (isFirst && onTitleUpdate) {
+        const title = text.slice(0, 20) + (text.length > 20 ? '…' : '');
+        onTitleUpdate(sessionId, title);
+      }
 
       if (data.reply && data.reply.includes('```hitl')) {
         const parts = data.reply.split('```hitl');
@@ -69,12 +76,6 @@ function AIChat({ api }) {
       setMessages(prev => [...prev, { role: 'ai', text: `请求失败: ${err.message}` }]);
     }
     setLoading(false);
-  };
-
-  const clearHistory = async () => {
-    await fetch(`${api}/api/chat/history`, { method: 'DELETE' });
-    setMessages([]);
-    setPendingHITL(null);
   };
 
   const handleHITLAction = async (action) => {
@@ -136,7 +137,7 @@ function AIChat({ api }) {
     );
   };
 
-  if (!historyLoaded) return null;
+  if (!historyLoaded) return <div className="gpt-chat" />;
 
   return (
     <div className="gpt-chat">
@@ -151,38 +152,33 @@ function AIChat({ api }) {
           </div>
         </div>
       ) : (
-        <>
-          <div className="gpt-toolbar">
-            <button className="gpt-clear-btn" onClick={clearHistory}>清空对话</button>
-          </div>
-          <div className="gpt-messages">
-            {messages.map((msg, i) => (
-              <div key={i} className={`gpt-row gpt-row--${msg.role}`}>
-                {msg.role === 'ai' && <div className="gpt-avatar">✦</div>}
-                <div className="gpt-bubble">
-                  {msg.text && <div className="gpt-text">{msg.text}</div>}
-                  {msg.hitl && (
-                    <div className="hitl-block">
-                      {JSON.stringify(msg.hitl, null, 2)}
-                    </div>
-                  )}
-                  {msg.hitl && pendingHITL && i === messages.length - 1 &&
-                    renderHITLActions(pendingHITL)
-                  }
-                </div>
+        <div className="gpt-messages">
+          {messages.map((msg, i) => (
+            <div key={i} className={`gpt-row gpt-row--${msg.role}`}>
+              {msg.role === 'ai' && <div className="gpt-avatar">✦</div>}
+              <div className="gpt-bubble">
+                {msg.text && <div className="gpt-text">{msg.text}</div>}
+                {msg.hitl && (
+                  <div className="hitl-block">
+                    {JSON.stringify(msg.hitl, null, 2)}
+                  </div>
+                )}
+                {msg.hitl && pendingHITL && i === messages.length - 1 &&
+                  renderHITLActions(pendingHITL)
+                }
               </div>
-            ))}
-            {loading && (
-              <div className="gpt-row gpt-row--ai">
-                <div className="gpt-avatar">✦</div>
-                <div className="gpt-bubble">
-                  <div className="gpt-typing"><span /><span /><span /></div>
-                </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="gpt-row gpt-row--ai">
+              <div className="gpt-avatar">✦</div>
+              <div className="gpt-bubble">
+                <div className="gpt-typing"><span /><span /><span /></div>
               </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
       )}
 
       <div className="gpt-input-wrap">
