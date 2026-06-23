@@ -35,11 +35,29 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
         hitl: m.hitl || null,
         apicall: m.apicall || null,
         apicallResult: m.apicall_result || null,
+        msgId: m.id || null,
       }));
       setMessages(mapped);
-      // 恢复未处理的 HITL：最后一条是 AI 且带 hitl
       const last = mapped[mapped.length - 1];
       if (last?.role === 'ai' && last?.hitl) setPendingHITL(last.hitl);
+
+      // 自动补跑缺少结果的 apicall
+      const missing = mapped
+        .map((m, i) => ({ m, i }))
+        .filter(({ m }) => m.apicall && !m.apicallResult);
+      if (missing.length > 0) {
+        missing.forEach(async ({ m, i }) => {
+          const result = await executeApicall(api, m.apicall);
+          setMessages(prev => prev.map((msg, idx) => idx === i ? { ...msg, apicallResult: result } : msg));
+          if (m.msgId) {
+            fetch(`${api}/api/chat/messages/${m.msgId}/apicall_result`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(result),
+            }).catch(() => {});
+          }
+        });
+      }
     } catch {
       setMessages([]);
     }
@@ -93,13 +111,21 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       if (data.apicall) {
         msg.text = msg.text.split('```apicall')[0];
         msg.apicall = data.apicall;
-        msg.apicallResult = null; // 占位，触发"请求中..."
+        msg.apicallResult = null;
         setMessages(prev => [...prev, msg]);
         setLoading(false);
         const result = await executeApicall(api, data.apicall);
         setMessages(prev => prev.map((m, i) =>
           i === prev.length - 1 ? { ...m, apicallResult: result } : m
         ));
+        // 持久化结果
+        if (data.msg_id) {
+          fetch(`${api}/api/chat/messages/${data.msg_id}/apicall_result`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result),
+          }).catch(() => {});
+        }
         return;
       }
 
@@ -159,48 +185,66 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
         </div>
       ) : (
         <div className="gpt-messages">
-          {messages.map((msg, i) => (
-            <div key={i} className={`gpt-row gpt-row--${msg.role}`}>
-              {msg.role === 'ai' && <div className="gpt-avatar">✦</div>}
-              <div className="gpt-bubble">
-                {msg.text && (
-                  <div className="gpt-text gpt-text--markdown">
-                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+          {(() => {
+            const skip = new Set();
+            return messages.map((msg, i) => {
+              if (skip.has(i)) return null;
+              // AI 消息有已处理的 hitl，把下一条 user 消息内嵌
+              let hitlReply = null;
+              if (msg.role === 'ai' && msg.hitl) {
+                const isReadonly = !(pendingHITL && i === messages.length - 1);
+                const next = messages[i + 1];
+                if (isReadonly && next?.role === 'user') {
+                  hitlReply = next.text;
+                  skip.add(i + 1);
+                }
+              }
+              return (
+                <div key={i} className={`gpt-row gpt-row--${msg.role}`}>
+                  {msg.role === 'ai' && <div className="gpt-avatar">✦</div>}
+                  <div className="gpt-bubble">
+                    {msg.text && (
+                      <div className="gpt-text gpt-text--markdown">
+                        <ReactMarkdown>{msg.text}</ReactMarkdown>
+                      </div>
+                    )}
+                    {msg.apicall && (
+                      <ApiCallResult apicall={msg.apicall} result={msg.apicallResult} />
+                    )}
+                    {msg.hitl && (
+                      <HITLWidget
+                        hitl={msg.hitl}
+                        readonly={!(pendingHITL && i === messages.length - 1)}
+                        onAction={handleHITLAction}
+                        api={api}
+                        reply={hitlReply}
+                      />
+                    )}
+                    {msg.text && (
+                      <div className="msg-actions">
+                        <button
+                          className={`msg-copy-btn ${copiedIdx === i ? 'msg-copy-btn--copied' : ''}`}
+                          onClick={() => copyMessage(msg, i)}
+                          title="复制"
+                        >
+                          {copiedIdx === i ? (
+                            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+                              <path d="M2 7l4 4 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+                              <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+                              <path d="M2 10V2h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-                {msg.apicall && (
-                  <ApiCallResult apicall={msg.apicall} result={msg.apicallResult} />
-                )}
-                {msg.hitl && (
-                  <HITLWidget
-                    hitl={msg.hitl}
-                    readonly={!(pendingHITL && i === messages.length - 1)}
-                    onAction={handleHITLAction}
-                  />
-                )}
-                {msg.text && (
-                  <div className="msg-actions">
-                    <button
-                      className={`msg-copy-btn ${copiedIdx === i ? 'msg-copy-btn--copied' : ''}`}
-                      onClick={() => copyMessage(msg, i)}
-                      title="复制"
-                    >
-                      {copiedIdx === i ? (
-                        <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
-                          <path d="M2 7l4 4 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
-                          <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-                          <path d="M2 10V2h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+                </div>
+              );
+            });
+          })()}
           {loading && (
             <div className="gpt-row gpt-row--ai">
               <div className="gpt-avatar">✦</div>

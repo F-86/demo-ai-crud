@@ -1,48 +1,210 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DateRangePicker from './DateRangePicker';
 
-function HITLWidget({ hitl, onAction, readonly }) {
-  const decision = hitl?.checkpoint?.decisions?.[0];
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
+
+// 渲染单个 decision
+function DecisionWidget({ decision, values, setValues, readonly, api }) {
+  const [comboOptions, setComboOptions] = useState([]);
+  const field = decision.field;
+
+  useEffect(() => {
+    if (decision.type !== 'combobox') return;
+    const ep = decision.options_from?.endpoint;
+    if (!ep) return;
+    fetch(`${api || API_BASE}${ep}`)
+      .then(r => r.json())
+      .then(data => setComboOptions(Array.isArray(data) ? data : []))
+      .catch(() => setComboOptions([]));
+  }, [decision, api]);
+
+  if (decision.type === 'combobox') {
+    const labelField = decision.options_from?.label_field || 'label';
+    const valueField = decision.options_from?.value_field || 'value';
+    const selected = values[field] || [];
+    const toggle = (val) => {
+      if (readonly) return;
+      setValues(v => {
+        const cur = v[field] || [];
+        return { ...v, [field]: cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val] };
+      });
+    };
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{decision.label}</span>
+        <div className="hitlw-tags">
+          {comboOptions.map(o => {
+            const val = o[valueField];
+            const lbl = o[labelField];
+            const active = selected.includes(val);
+            return (
+              <button
+                key={val}
+                className={`hitlw-tag ${active ? 'hitlw-tag--active' : ''}`}
+                disabled={readonly}
+                onClick={() => toggle(val)}
+              >{lbl}</button>
+            );
+          })}
+          {comboOptions.length === 0 && !readonly && (
+            <span className="hitlw-dim">加载中...</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (decision.type === 'number_range') {
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{decision.label}{decision.unit ? `（${decision.unit}）` : ''}</span>
+        <div className="hitlw-range">
+          <input
+            className="hitlw-input hitlw-input--half"
+            type="number"
+            placeholder="最小值"
+            disabled={readonly}
+            value={values[`${field}__gte`] || ''}
+            onChange={e => setValues(v => ({ ...v, [`${field}__gte`]: e.target.value }))}
+          />
+          <span className="hitlw-range-sep">—</span>
+          <input
+            className="hitlw-input hitlw-input--half"
+            type="number"
+            placeholder="最大值"
+            disabled={readonly}
+            value={values[`${field}__lte`] || ''}
+            onChange={e => setValues(v => ({ ...v, [`${field}__lte`]: e.target.value }))}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (decision.type === 'datetime_range') {
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{decision.label}</span>
+        <DateRangePicker
+          valueGte={values[`${field}__gte`] || ''}
+          valueLte={values[`${field}__lte`] || ''}
+          onChange={(gte, lte) => setValues(v => ({ ...v, [`${field}__gte`]: gte, [`${field}__lte`]: lte }))}
+          disabled={readonly}
+        />
+      </div>
+    );
+  }
+
+  // input 字段（Create/Update 场景）
+  if (decision.type === 'input') {
+    const fields = decision.fields || [];
+    return (
+      <div className="hitlw-decision">
+        {fields.map(f => (
+          <div key={f.name} className="hitlw-input-row" style={{ marginBottom: 8 }}>
+            <span className="hitlw-label">{f.label}</span>
+            {f.type === 'choice' ? (
+              <select
+                className="hitlw-input"
+                disabled={readonly}
+                value={values[f.name] || ''}
+                onChange={e => setValues(v => ({ ...v, [f.name]: e.target.value }))}
+              >
+                <option value="">— 请选择 —</option>
+                {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            ) : (
+              <input
+                className="hitlw-input"
+                type={f.type === 'number' ? 'number' : 'text'}
+                placeholder={f.required ? '必填' : '可选'}
+                disabled={readonly}
+                value={values[f.name] || ''}
+                onChange={e => setValues(v => ({ ...v, [f.name]: e.target.value }))}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function HITLWidget({ hitl, onAction, readonly, api, reply }) {
+  const decisions = hitl?.checkpoint?.decisions || [];
   const apicall = hitl?.checkpoint?.apicall;
   const summary = hitl?.checkpoint?.summary || '';
-  const fields = decision?.fields || [];
 
+  // 把用户提交的 reply JSON 转成 values 格式
+  const initValues = () => {
+    if (!readonly || !reply) return {};
+    try {
+      const parsed = JSON.parse(reply);
+      const vals = {};
+      Object.entries(parsed).forEach(([k, v]) => {
+        if (v && typeof v === 'object' && !Array.isArray(v) && ('gte' in v || 'lte' in v)) {
+          if (v.gte !== undefined) vals[`${k}__gte`] = String(v.gte);
+          if (v.lte !== undefined) vals[`${k}__lte`] = String(v.lte);
+        } else {
+          vals[k] = v;
+        }
+      });
+      return vals;
+    } catch { return {}; }
+  };
+
+  const [values, setValues] = useState(initValues);
   const [index, setIndex] = useState(0);
-  const [values, setValues] = useState({});
 
-  if (!decision) return null;
+  if (!decisions.length) return null;
 
-  const isInput = decision.type === 'input';
-  const isConfirm = decision.type === 'confirm';
-  const isOptions = decision.type === 'options' || decision.options?.length > 0;
+  const firstDecision = decisions[0];
+  const isChoiceOnly = decisions.length === 1 && (firstDecision.type === 'choice' || firstDecision.type === 'confirm');
+  const isMultiDecision = decisions.some(d => ['combobox', 'number_range', 'datetime_range', 'input'].includes(d.type));
+
+  const isDecisionFilled = (d) => {
+    const f = d.field || d.name;
+    if (d.type === 'combobox') return (values[f] || []).length > 0;
+    if (d.type === 'number_range' || d.type === 'datetime_range')
+      return !!(values[`${f}__gte`] || values[`${f}__lte`]);
+    if (d.type === 'input') return (d.fields || []).some(fi => !!values[fi.name]);
+    return false;
+  };
 
   const handleSubmit = () => {
     const out = {};
-    fields.forEach(f => {
-      if (f.type === 'number_range' || f.type === 'datetime_range') {
-        const gte = values[`${f.name}__gte`];
-        const lte = values[`${f.name}__lte`];
+    decisions.forEach(d => {
+      const f = d.field || d.name;
+      if (d.type === 'combobox') {
+        if ((values[f] || []).length > 0) out[f] = values[f];
+      } else if (d.type === 'number_range') {
+        const gte = values[`${f}__gte`];
+        const lte = values[`${f}__lte`];
         if (gte || lte) {
           const range = {};
-          if (gte) range.gte = f.type === 'number_range' ? Number(gte) : gte;
-          if (lte) range.lte = f.type === 'number_range' ? Number(lte) : lte;
-          out[f.name] = range;
+          if (gte) range.gte = Number(gte);
+          if (lte) range.lte = Number(lte);
+          out[f] = range;
         }
-      } else {
-        if (values[f.name]) out[f.name] = values[f.name];
+      } else if (d.type === 'datetime_range') {
+        const gte = values[`${f}__gte`];
+        const lte = values[`${f}__lte`];
+        if (gte || lte) {
+          const range = {};
+          if (gte) range.gte = gte;
+          if (lte) range.lte = lte;
+          out[f] = range;
+        }
+      } else if (d.type === 'input') {
+        (d.fields || []).forEach(fi => { if (values[fi.name]) out[fi.name] = values[fi.name]; });
       }
     });
     onAction(JSON.stringify(out));
   };
 
-  const isFieldFilled = (f) => {
-    if (f.type === 'number_range' || f.type === 'datetime_range') {
-      return !!(values[`${f.name}__gte`] || values[`${f.name}__lte`]);
-    }
-    return !!values[f.name];
-  };
-
-  const field = fields[index];
+  const currentDecision = decisions[index];
 
   return (
     <div className={`hitlw ${readonly ? 'hitlw--readonly' : ''}`}>
@@ -52,72 +214,32 @@ function HITLWidget({ hitl, onAction, readonly }) {
         {readonly && <span className="hitlw-badge">已处理</span>}
       </div>
 
-      {/* input 多字段轮播 */}
-      {isInput && fields.length > 0 && (
+      {/* 多 decision 轮播（combobox / number_range / datetime_range） */}
+      {isMultiDecision && (
         <>
-          <div className="hitlw-field">
-            <span className="hitlw-label">{field.label}</span>
-            {field.type === 'choice' ? (
-              <select
-                className="hitlw-input"
-                disabled={readonly}
-                value={values[field.name] || ''}
-                onChange={e => setValues(v => ({ ...v, [field.name]: e.target.value }))}
-              >
-                <option value="">— 不筛选 —</option>
-                {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            ) : field.type === 'datetime_range' ? (
-              <DateRangePicker
-                valueGte={values[`${field.name}__gte`] || ''}
-                valueLte={values[`${field.name}__lte`] || ''}
-                onChange={(gte, lte) => setValues(v => ({ ...v, [`${field.name}__gte`]: gte, [`${field.name}__lte`]: lte }))}
-                disabled={readonly}
-              />
-            ) : field.type === 'number_range' ? (
-              <div className="hitlw-range">
-                <input
-                  className="hitlw-input hitlw-input--half"
-                  type="number"
-                  placeholder="最小值"
-                  disabled={readonly}
-                  value={values[`${field.name}__gte`] || ''}
-                  onChange={e => setValues(v => ({ ...v, [`${field.name}__gte`]: e.target.value }))}
-                />
-                <span className="hitlw-range-sep">—</span>
-                <input
-                  className="hitlw-input hitlw-input--half"
-                  type="number"
-                  placeholder="最大值"
-                  disabled={readonly}
-                  value={values[`${field.name}__lte`] || ''}
-                  onChange={e => setValues(v => ({ ...v, [`${field.name}__lte`]: e.target.value }))}
-                />
-              </div>
-            ) : (
-              <input
-                className="hitlw-input"
-                type="text"
-                placeholder={readonly ? '—' : (field.required ? '必填' : '留空则不筛选')}
-                disabled={readonly}
-                value={values[field.name] || ''}
-                onChange={e => setValues(v => ({ ...v, [field.name]: e.target.value }))}
-              />
-            )}
-          </div>
+          <DecisionWidget
+            key={index}
+            decision={currentDecision}
+            values={values}
+            setValues={setValues}
+            readonly={readonly}
+            api={api}
+          />
 
-          {/* 导航 dots + 箭头 */}
-          <div className="hitlw-nav">
-            <div className="hitlw-dots">
-              {fields.map((_, i) => (
-                <button
-                  key={i}
-                  className={`hitlw-dot ${i === index ? 'hitlw-dot--active' : ''} ${isFieldFilled(fields[i]) ? 'hitlw-dot--filled' : ''}`}
-                  onClick={() => setIndex(i)}
-                />
-              ))}
+          {/* dots 导航 */}
+          {decisions.length > 1 && (
+            <div className="hitlw-nav">
+              <div className="hitlw-dots">
+                {decisions.map((d, i) => (
+                  <button
+                    key={i}
+                    className={`hitlw-dot ${i === index ? 'hitlw-dot--active' : ''} ${isDecisionFilled(d) ? 'hitlw-dot--filled' : ''}`}
+                    onClick={() => setIndex(i)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {!readonly && (
             <div className="hitlw-actions">
@@ -128,28 +250,23 @@ function HITLWidget({ hitl, onAction, readonly }) {
         </>
       )}
 
-      {/* confirm 类型 */}
-      {isConfirm && !isOptions && (
-        !readonly ? (
+      {/* choice/confirm 单决策 */}
+      {isChoiceOnly && !readonly && (
+        firstDecision.type === 'confirm' ? (
           <div className="hitlw-actions">
             <button className="hitlw-btn default" onClick={() => onAction('cancel')}>取消</button>
             <button className="hitlw-btn danger" onClick={() => onAction('confirm', apicall)}>确认</button>
           </div>
-        ) : null
-      )}
-
-      {/* options 类型 */}
-      {isOptions && (
-        !readonly ? (
+        ) : (
           <div className="hitlw-actions">
-            {decision.options?.map((opt, i) => (
+            {firstDecision.options?.map((opt, i) => (
               <button key={i}
-                className={`hitlw-btn ${opt.value === 'confirm' ? 'danger' : opt.value === 'cancel' ? 'default' : 'primary'}`}
+                className={`hitlw-btn ${opt.value === 'confirm' ? 'danger' : opt.value === '取消查询' || opt.value === 'cancel' ? 'default' : 'primary'}`}
                 onClick={() => onAction(opt.value, opt.value === 'confirm' ? apicall : null)}
               >{opt.label}</button>
             ))}
           </div>
-        ) : null
+        )
       )}
     </div>
   );

@@ -52,6 +52,10 @@ def list_products(
     conn.close()
     return [dict(r) for r in rows]
 
+@app.get("/api/products/categories")
+def list_categories():
+    return [{"value": c, "label": c} for c in ["玩具", "服装", "饮料", "食品", "数码"]]
+
 @app.post("/api/products/query")
 def query_products(body: dict):
     filters = body.get("filters", {})
@@ -217,7 +221,7 @@ def delete_session(sid: int):
 def get_session_messages(sid: int, limit: int = 200):
     conn = db()
     rows = conn.execute(
-        "SELECT id, role, text, hitl, created FROM chat_messages WHERE session_id=? ORDER BY id ASC LIMIT ?",
+        "SELECT id, role, text, hitl, apicall, apicall_result, created FROM chat_messages WHERE session_id=? ORDER BY id ASC LIMIT ?",
         (sid, limit)
     ).fetchall()
     conn.close()
@@ -226,6 +230,10 @@ def get_session_messages(sid: int, limit: int = 200):
         msg = {"id": r["id"], "role": r["role"], "text": r["text"], "created": r["created"]}
         if r["hitl"]:
             msg["hitl"] = json.loads(r["hitl"])
+        if r["apicall"]:
+            msg["apicall"] = json.loads(r["apicall"])
+        if r["apicall_result"]:
+            msg["apicall_result"] = json.loads(r["apicall_result"])
         result.append(msg)
     return result
 
@@ -306,21 +314,37 @@ async def execute_skill(body: dict):
             pass
 
     conn.execute(
-        "INSERT INTO chat_messages (session_id, role, text, hitl) VALUES (?, ?, ?, ?)",
-        (session_id, "ai", reply, json.dumps(hitl_json, ensure_ascii=False) if hitl_json else None)
+        "INSERT INTO chat_messages (session_id, role, text, hitl, apicall) VALUES (?, ?, ?, ?, ?)",
+        (session_id, "ai", reply,
+         json.dumps(hitl_json, ensure_ascii=False) if hitl_json else None,
+         json.dumps(apicall_json, ensure_ascii=False) if apicall_json else None)
     )
     conn.execute(
         "UPDATE chat_sessions SET updated=datetime('now','localtime') WHERE id=?",
         (session_id,)
     )
     conn.commit()
+    msg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
 
     if apicall_json:
         result["apicall"] = apicall_json
+        result["msg_id"] = msg_id
     if hitl_json:
         result["hitl"] = hitl_json
     return result
+
+
+@app.post("/api/chat/messages/{msg_id}/apicall_result")
+def save_apicall_result(msg_id: int, body: dict):
+    conn = db()
+    conn.execute(
+        "UPDATE chat_messages SET apicall_result=? WHERE id=?",
+        (json.dumps(body, ensure_ascii=False), msg_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -37,15 +37,25 @@ def init_db():
         conn.execute("DROP TABLE chat_messages")
         conn.execute("""
             CREATE TABLE chat_messages (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-                role       TEXT NOT NULL CHECK(role IN ('user','ai')),
-                text       TEXT NOT NULL,
-                hitl       TEXT,
-                created    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id     INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                role           TEXT NOT NULL CHECK(role IN ('user','ai')),
+                text           TEXT NOT NULL,
+                hitl           TEXT,
+                apicall        TEXT,
+                apicall_result TEXT,
+                created        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )
         """)
         conn.commit()
+    else:
+        # 迁移：增加 apicall / apicall_result 列（旧版本没有）
+        if "apicall" not in cols:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN apicall TEXT")
+            conn.commit()
+        if "apicall_result" not in cols:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN apicall_result TEXT")
+            conn.commit()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
