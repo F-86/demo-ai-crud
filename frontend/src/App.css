@@ -206,6 +206,21 @@ body {
   padding: 2px 6px;
   outline: none;
 }
+.sidebar-confirm-delete {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.sidebar-confirm-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ─── chat empty ──────────────────────────────── */
 .chat-empty {
@@ -562,3 +577,17 @@ td input, td select {
 .btn-save { background: var(--success); color: #fff; }
 .btn-cancel { background: var(--border); color: var(--text); }
 .btn-delete { background: var(--danger); color: #fff; }
+
+/* ApiCallResult */
+.apicall-loading { padding: 8px 0; color: var(--text-dim); font-size: 13px; }
+.apicall-error { padding: 8px 10px; color: var(--danger); font-size: 13px; }
+.apicall-empty { padding: 8px 0; color: var(--text-dim); font-size: 13px; }
+.apicall-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.apicall-table th, .apicall-table td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.apicall-table th { background: var(--surface); color: var(--text-dim); font-size: 11px; text-transform: uppercase; font-weight: 600; }
+.apicall-card { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 10px 12px; background: var(--surface); border-radius: var(--radius); font-size: 13px; }
+.apicall-card-row { display: flex; justify-content: space-between; }
+.apicall-card-row span:first-child { color: var(--text-dim); }
+.apicall-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.apicall-badge--success { background: rgba(46,204,113,.15); color: var(--success); }
+.apicall-badge--danger { background: rgba(231,76,60,.15); color: var(--danger); }

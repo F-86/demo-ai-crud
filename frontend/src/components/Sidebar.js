@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 function Sidebar({ sessions, activeId, tab, onSelect, onCreate, onDelete, onRename, onTabChange, open, onToggle }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const startEdit = (e, s) => {
     e.stopPropagation();
@@ -84,6 +85,20 @@ function Sidebar({ sessions, activeId, tab, onSelect, onCreate, onDelete, onRena
                     }}
                     onClick={e => e.stopPropagation()}
                   />
+                ) : confirmDeleteId === s.id ? (
+                  <div className="sidebar-confirm-delete" onClick={e => e.stopPropagation()}>
+                    <span className="sidebar-confirm-label">确认删除？</span>
+                    <button className="sidebar-icon-btn danger" title="确认" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); onDelete(s.id); }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                    <button className="sidebar-icon-btn" title="取消" onClick={e => { e.stopPropagation(); setConfirmDeleteId(null); }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <span className="sidebar-title">{s.title}</span>
@@ -93,7 +108,7 @@ function Sidebar({ sessions, activeId, tab, onSelect, onCreate, onDelete, onRena
                           <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
                         </svg>
                       </button>
-                      <button className="sidebar-icon-btn danger" title="删除" onClick={e => { e.stopPropagation(); onDelete(s.id); }}>
+                      <button className="sidebar-icon-btn danger" title="删除" onClick={e => { e.stopPropagation(); setConfirmDeleteId(s.id); }}>
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                           <path d="M2 3h8M5 3V2h2v1M4 3v6h4V3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
                         </svg>
