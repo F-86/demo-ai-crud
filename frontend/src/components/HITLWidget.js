@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DateRangePicker from './DateRangePicker';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_API_BASE || '';
 
 // 渲染单个 decision
 function DecisionWidget({ decision, values, setValues, readonly, api }) {

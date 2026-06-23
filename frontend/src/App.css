@@ -872,3 +872,179 @@ td input, td select {
 .apicall-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
 .apicall-badge--success { background: rgba(46,204,113,.15); color: var(--success); }
 .apicall-badge--danger { background: rgba(231,76,60,.15); color: var(--danger); }
+
+
+/* --- 响应式布局 ---------------------------------- */
+
+/* 平板 & 大手机 (<= 900px) */
+@media (max-width: 900px) {
+  .sidebar--open { width: 200px; }
+  .products-wrap { padding: 16px; }
+  .gpt-messages { padding: 16px 12px 12px; }
+  .gpt-input-wrap { padding: 8px 12px; }
+  .gpt-welcome-title { font-size: 22px; }
+  .gpt-suggestions { max-width: 100%; }
+  .search-bar input, .search-bar select { max-width: 100px; }
+}
+
+/* 手机 (<= 700px) */
+@media (max-width: 700px) {
+  .layout {
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+  }
+  .layout-main { min-height: 0; }
+  .gpt-chat { min-height: 0; }
+  .sidebar {
+    width: 100% !important;
+    flex-direction: row !important;
+    align-items: center;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    height: 52px;
+    max-height: 52px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .sidebar--open, .sidebar--closed { width: 100% !important; }
+  .sidebar-header { padding: 8px 12px; min-height: auto; flex-shrink: 0; }
+  .sidebar--closed .sidebar-header { justify-content: space-between; }
+  .sidebar-nav { flex-direction: row !important; padding: 0; gap: 0; flex: 1; overflow: hidden; }
+  .sidebar-nav-item {
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 12px;
+    flex: 1;
+    border-radius: 0;
+    white-space: nowrap;
+  }
+  .sidebar--closed .sidebar-nav-item { justify-content: center; padding: 8px 12px; width: auto; }
+  .sidebar-section-header,
+  .sidebar-toggle-btn { display: none !important; }
+  .sidebar-brand { display: none !important; }
+  .sidebar-nav { flex-shrink: 0; }
+  .sidebar-list { display: none !important; }
+
+  /* Mobile session picker */
+  .mobile-picker {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+  }
+  .mobile-picker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 18px;
+    font-weight: 600;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-picker-close {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 20px; cursor: pointer; padding: 4px 8px;
+  }
+  .mobile-picker-new {
+    width: 100%; padding: 12px; margin: 12px 0;
+    background: var(--accent); color: #fff; border: none;
+    border-radius: var(--radius); font-size: 15px; cursor: pointer;
+  }
+  .mobile-picker-list {
+    flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+  }
+  .mobile-picker-empty {
+    text-align: center; color: var(--text-dim); padding: 24px 0; font-size: 14px;
+  }
+  .mobile-picker-item {
+    padding: 12px 14px; border-radius: var(--radius); cursor: pointer;
+    font-size: 14px; color: var(--text); border: 1px solid transparent;
+  }
+  .mobile-picker-item:hover { background: var(--surface); }
+  .mobile-picker-item.active { background: var(--surface); border-color: var(--accent); }
+  .mobile-picker-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  .mobile-picker-item-title { flex: 1; cursor: pointer; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-picker-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .mobile-picker-icon-btn {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 14px; padding: 4px 6px; border-radius: 4px; line-height: 1;
+  }
+  .mobile-picker-icon-btn:hover { background: var(--border); color: var(--text); }
+  .mobile-picker-icon-btn.danger:hover { color: var(--danger); }
+  .mobile-picker-edit-row, .mobile-picker-confirm-row {
+    display: flex; align-items: center; gap: 6px; flex: 1;
+  }
+  .mobile-picker-edit-input {
+    flex: 1; padding: 6px 8px; background: var(--bg); border: 1px solid var(--accent);
+    border-radius: 4px; color: var(--text); font-size: 14px; outline: none;
+  }
+  .mobile-picker-confirm-text { font-size: 13px; color: var(--danger); flex: 1; }
+
+  .products-wrap { padding: 12px; }
+  .search-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 10px;
+  }
+  .search-bar label { font-size: 11px; }
+  .search-bar input, .search-bar select {
+    max-width: 100%;
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+  .search-bar .search-btn,
+  .search-bar .reset-btn { font-size: 12px; padding: 6px 12px; }
+
+  table { font-size: 12px; }
+  th, td { padding: 6px 6px; }
+  th { font-size: 11px; }
+  td input, td select { font-size: 12px; padding: 3px 4px; }
+  .btn-edit, .btn-save, .btn-cancel, .btn-delete {
+    padding: 6px 8px; font-size: 11px; min-height: 32px; min-width: 44px;
+  }
+
+  .gpt-messages { padding: 12px 8px 8px; }
+  .gpt-welcome { padding: 0 16px 60px; }
+  .gpt-welcome-title { font-size: 20px; }
+  .gpt-suggestions { gap: 6px; }
+  .gpt-suggestion { font-size: 13px; padding: 8px 12px; }
+  .gpt-text { font-size: 14px; }
+  .gpt-row--user .gpt-text { font-size: 13px; padding: 8px 14px; }
+  .gpt-input-wrap { padding: 8px 8px; }
+  .gpt-input-box { padding: 8px 10px; border-radius: 12px; }
+  .gpt-input-box textarea { font-size: 14px; }
+
+  .hitlw { max-width: 100%; min-width: 0; }
+  .hitlw-tag { font-size: 12px; padding: 6px 10px; min-height: 36px; }
+  .hitlw-btn { padding: 8px 12px; font-size: 13px; min-height: 36px; }
+  .apicall-table { font-size: 12px; }
+  .apicall-table th, .apicall-table td { padding: 5px 6px; }
+}
+
+/* 小手机 (<= 480px) */
+@media (max-width: 480px) {
+  .products-wrap { padding: 8px; }
+  .search-bar { grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px; }
+  .search-bar label { font-size: 10px; }
+  .search-bar input, .search-bar select { font-size: 11px; padding: 3px 6px; }
+  table { font-size: 11px; }
+  th, td { padding: 4px 4px; }
+  th { font-size: 10px; }
+  .btn-edit, .btn-save, .btn-cancel, .btn-delete {
+    font-size: 10px; padding: 4px 6px; min-width: 36px; min-height: 28px;
+  }
+  .gpt-messages { padding: 8px 4px; }
+  .gpt-text { font-size: 13px; }
+  .gpt-input-wrap { padding: 6px 4px; }
+  .gpt-input-box textarea { font-size: 13px; }
+  .gpt-hint { font-size: 11px; }
+  .hitlw { padding: 10px; }
+  .hitlw-summary { font-size: 11px; }
+  .hitlw-tag { font-size: 11px; padding: 5px 8px; min-height: 32px; }
+  .add-btn { width: 100%; text-align: center; font-size: 13px; padding: 10px; }
+}
