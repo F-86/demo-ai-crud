@@ -1,7 +1,19 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import ApiCallResult from './ApiCallResult';
+import HITLWidget from './HITLWidget';
 
 const SUGGESTIONS = ['查一下所有商品', '帮我添加一个商品', '修改商品信息', '删除一个商品'];
+
+async function executeApicall(api, apicall) {
+  const { method, endpoint, body } = apicall;
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${api}${endpoint}`, opts);
+  const data = await res.json();
+  if (!res.ok) return { error: data.detail || `请求失败 (${res.status})` };
+  return data;
+}
 
 function AIChat({ api, sessionId, onTitleUpdate }) {
   const [messages, setMessages] = useState([]);
@@ -17,7 +29,17 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
     try {
       const res = await fetch(`${api}/api/chat/sessions/${sessionId}/messages`);
       const data = await res.json();
-      setMessages(data.map(m => ({ role: m.role, text: m.text, hitl: m.hitl || null })));
+      const mapped = data.map(m => ({
+        role: m.role,
+        text: m.hitl ? m.text.split('```hitl')[0] : (m.apicall ? m.text.split('```apicall')[0] : m.text),
+        hitl: m.hitl || null,
+        apicall: m.apicall || null,
+        apicallResult: m.apicall_result || null,
+      }));
+      setMessages(mapped);
+      // 恢复未处理的 HITL：最后一条是 AI 且带 hitl
+      const last = mapped[mapped.length - 1];
+      if (last?.role === 'ai' && last?.hitl) setPendingHITL(last.hitl);
     } catch {
       setMessages([]);
     }
@@ -55,33 +77,52 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       const data = await res.json();
 
       if (isFirst && onTitleUpdate) {
-        const title = text.slice(0, 20) + (text.length > 20 ? '…' : '');
-        onTitleUpdate(sessionId, title);
+        onTitleUpdate(sessionId, text.slice(0, 20) + (text.length > 20 ? '…' : ''));
       }
 
-      if (data.reply && data.reply.includes('```hitl')) {
-        const parts = data.reply.split('```hitl');
-        const textBefore = parts[0];
-        const hitlPart = parts[1].split('```')[0];
-        try {
-          const hitlJson = JSON.parse(hitlPart);
-          setPendingHITL(hitlJson);
-          setMessages(prev => [...prev, { role: 'ai', text: textBefore, hitl: hitlJson }]);
-        } catch {
-          setMessages(prev => [...prev, { role: 'ai', text: data.reply }]);
-        }
-      } else {
-        setMessages(prev => [...prev, { role: 'ai', text: data.reply }]);
+      const msg = { role: 'ai', text: data.reply || '' };
+
+      // 解析 hitl
+      if (data.hitl) {
+        msg.hitl = data.hitl;
+        msg.text = msg.text.split('```hitl')[0];
+        setPendingHITL(data.hitl);
       }
+
+      // 解析 apicall：自动执行并挂载结果
+      if (data.apicall) {
+        msg.text = msg.text.split('```apicall')[0];
+        msg.apicall = data.apicall;
+        msg.apicallResult = null; // 占位，触发"请求中..."
+        setMessages(prev => [...prev, msg]);
+        setLoading(false);
+        const result = await executeApicall(api, data.apicall);
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 ? { ...m, apicallResult: result } : m
+        ));
+        return;
+      }
+
+      setMessages(prev => [...prev, msg]);
     } catch (err) {
       setMessages(prev => [...prev, { role: 'ai', text: `请求失败: ${err.message}` }]);
     }
     setLoading(false);
   };
 
-  const handleHITLAction = async (action) => {
+  const handleHITLAction = async (action, apicall) => {
     setPendingHITL(null);
-    await sendMessage(action);
+    if (action === 'confirm' && apicall) {
+      // 删除确认：直接执行 apicall，无需再发消息
+      const pendingMsg = { role: 'ai', text: '', apicall, apicallResult: null };
+      setMessages(prev => [...prev, pendingMsg]);
+      const result = await executeApicall(api, apicall);
+      setMessages(prev => prev.map((m, i) =>
+        i === prev.length - 1 ? { ...m, apicallResult: result } : m
+      ));
+    } else if (action !== 'cancel') {
+      await sendMessage(action);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -91,52 +132,6 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
     }
   };
 
-  const renderHITLActions = (hitl) => {
-    const decision = hitl?.checkpoint?.decisions?.[0];
-    if (!decision) return null;
-
-    if (decision.type === 'input') {
-      return (
-        <div className="hitl-input-row">
-          <input
-            className="hitl-text-input"
-            placeholder="输入信息..."
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.target.value) {
-                handleHITLAction(e.target.value);
-                e.target.value = '';
-              }
-            }}
-          />
-          <button className="hitl-btn primary" onClick={(e) => {
-            const inp = e.target.closest('.hitl-input-row').querySelector('input');
-            if (inp?.value) { handleHITLAction(inp.value); inp.value = ''; }
-          }}>提交</button>
-        </div>
-      );
-    }
-
-    if (decision.type === 'confirm') {
-      return (
-        <div className="hitl-actions">
-          <button className="hitl-btn danger" onClick={() => handleHITLAction('confirm')}>确认</button>
-          <button className="hitl-btn default" onClick={() => handleHITLAction('cancel')}>取消</button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="hitl-actions">
-        {decision.options?.map((opt, i) => (
-          <button key={i}
-            className={`hitl-btn ${opt.value.includes('confirm') || opt.value === 'approve' ? 'danger' : opt.value === 'cancel' ? 'default' : 'primary'}`}
-            onClick={() => handleHITLAction(opt.value)}>
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    );
-  };
 
   if (!historyLoaded) return <div className="gpt-chat" />;
 
@@ -163,14 +158,16 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
                     <ReactMarkdown>{msg.text}</ReactMarkdown>
                   </div>
                 )}
-                {msg.hitl && (
-                  <div className="hitl-block">
-                    {JSON.stringify(msg.hitl, null, 2)}
-                  </div>
+                {msg.apicall && (
+                  <ApiCallResult apicall={msg.apicall} result={msg.apicallResult} />
                 )}
-                {msg.hitl && pendingHITL && i === messages.length - 1 &&
-                  renderHITLActions(pendingHITL)
-                }
+                {msg.hitl && (
+                  <HITLWidget
+                    hitl={msg.hitl}
+                    readonly={!(pendingHITL && i === messages.length - 1)}
+                    onAction={handleHITLAction}
+                  />
+                )}
               </div>
             </div>
           ))}

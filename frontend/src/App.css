@@ -303,7 +303,7 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 .gpt-messages > * {
-  max-width: 760px;
+  max-width: 1200px;
   width: 100%;
   margin-left: auto;
   margin-right: auto;
@@ -329,7 +329,7 @@ body {
   margin-top: 2px;
 }
 .gpt-bubble {
-  max-width: 72%;
+  max-width: 90%;
 }
 .gpt-row--user .gpt-bubble {
   display: flex;
@@ -423,6 +423,193 @@ body {
 }
 
 /* HITL */
+/* ─── HITLWidget ──────────────────────────────── */
+.hitlw {
+  background: #1a1b2e;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px 10px;
+  margin-top: 8px;
+  min-width: 240px;
+  max-width: 380px;
+}
+.hitlw--readonly {
+  border-color: var(--border);
+  opacity: 0.7;
+}
+.hitlw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.hitlw-summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1;
+}
+.hitlw-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.hitlw-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.hitlw-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.hitlw-input:focus { border-color: var(--accent); }
+.hitlw-input:disabled { opacity: 0.5; cursor: default; }
+.hitlw-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+.hitlw-arrow {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.hitlw-arrow:hover:not(:disabled) { color: var(--text); }
+.hitlw-arrow:disabled { opacity: 0.25; cursor: default; }
+.hitlw-dots {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.hitlw-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, transform 0.15s;
+}
+.hitlw-dot--active { background: var(--accent); transform: scale(1.3); }
+.hitlw-dot--filled:not(.hitlw-dot--active) { background: var(--accent-hover); }
+.hitlw-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+.hitlw-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+.hitlw-btn.primary { background: var(--accent); color: #fff; }
+.hitlw-btn.primary:hover { background: var(--accent-hover); }
+.hitlw-btn.danger { background: var(--danger); color: #fff; }
+.hitlw-btn.default { background: var(--border); color: var(--text); }
+.hitlw-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hitlw-input--half { flex: 1; min-width: 0; }
+.hitlw-range-sep { color: var(--text-dim); font-size: 13px; flex-shrink: 0; }
+.hitlw-input[type="date"] {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+/* ─── DateRangePicker ─────────────────────────── */
+.drp-wrap {
+  position: relative;
+  width: 100%;
+}
+.drp-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.drp-trigger:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.drp-trigger--open { border-color: var(--accent); color: var(--text); }
+.drp-trigger:disabled { opacity: 0.5; cursor: default; }
+.drp-trigger .drp-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drp-clear {
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1;
+  flex: none;
+  margin-left: auto;
+}
+.drp-clear:hover { color: var(--danger); }
+.drp-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  padding: 8px;
+}
+/* react-day-picker 深色主题覆盖 */
+.drp-popover .rdp-root {
+  --rdp-accent-color: var(--accent);
+  --rdp-accent-background-color: #2d2f4a;
+  --rdp-day-height: 32px;
+  --rdp-day-width: 32px;
+  --rdp-font-size: 13px;
+  color: var(--text);
+}
+.drp-popover .rdp-day_button:hover {
+  background: var(--border);
+}
+.drp-popover .rdp-chevron { fill: var(--text-dim); }
+.drp-popover .rdp-month_caption { color: var(--text); font-size: 13px; }
+.drp-popover .rdp-weekday { color: var(--text-dim); font-size: 11px; }
+.drp-popover .rdp-dropdown select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.drp-popover .rdp-dropdown select:focus { border-color: var(--accent); }
+
+
 .hitl-block {
   background: #1e1f2e;
   border: 1px solid var(--accent);
@@ -469,6 +656,22 @@ body {
 .hitl-btn.primary:hover { background: var(--accent-hover); }
 .hitl-btn.danger { background: var(--danger); color: #fff; }
 .hitl-btn.default { background: var(--border); color: var(--text); }
+.hitl-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+.hitl-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hitl-form-label {
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+}
 
 /* 输入框区域 */
 .gpt-input-wrap {
@@ -476,7 +679,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: 760px;
+  max-width: 1200px;
   width: 100%;
   margin: 0 auto;
   flex-shrink: 0;
