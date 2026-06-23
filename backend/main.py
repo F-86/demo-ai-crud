@@ -11,11 +11,11 @@ load_dotenv()  # 加载 .env 文件到环境变量
 from database import get_connection, init_db
 from models import ProductCreate, ProductUpdate, CATEGORIES
 import skill_framework
-import skills.product_skill  # register skills via import side effect
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    await skill_framework.init_registry()
     yield
 
 app = FastAPI(title="AI CRUD Demo", lifespan=lifespan)
@@ -47,6 +47,64 @@ def list_products(
     if created_before: query += " AND created<=?"; params.append(created_before)
     if updated_after: query += " AND updated>=?"; params.append(updated_after)
     if updated_before: query += " AND updated<=?"; params.append(updated_before)
+    query += " ORDER BY id ASC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/products/query")
+def query_products(body: dict):
+    filters = body.get("filters", {})
+    conn = db()
+    query = "SELECT * FROM products WHERE 1=1"
+    params = []
+    if filters.get("id"):
+        placeholders = ",".join("?" * len(filters["id"]))
+        query += f" AND id IN ({placeholders})"
+        params.extend(filters["id"])
+    if filters.get("name"):
+        query += " AND name LIKE ?"
+        params.append(f"%{filters['name'][0]}%")
+    if filters.get("category"):
+        placeholders = ",".join("?" * len(filters["category"]))
+        query += f" AND category IN ({placeholders})"
+        params.extend(filters["category"])
+    # price：支持新格式 {"gte": x, "lte": y} 和旧格式数组
+    price = filters.get("price")
+    if isinstance(price, dict):
+        if price.get("gte") is not None:
+            query += " AND price >= ?"; params.append(price["gte"])
+        if price.get("lte") is not None:
+            query += " AND price <= ?"; params.append(price["lte"])
+    else:
+        if filters.get("price_min"):
+            query += " AND price >= ?"; params.append(filters["price_min"][0])
+        if filters.get("price_max"):
+            query += " AND price <= ?"; params.append(filters["price_max"][0])
+    # created：支持新格式 {"gte": x, "lte": y} 和旧格式数组
+    created = filters.get("created")
+    if isinstance(created, dict):
+        if created.get("gte"):
+            query += " AND created >= ?"; params.append(created["gte"])
+        if created.get("lte"):
+            query += " AND created <= ?"; params.append(created["lte"])
+    else:
+        if filters.get("created_from"):
+            query += " AND created >= ?"; params.append(filters["created_from"][0])
+        if filters.get("created_to"):
+            query += " AND created <= ?"; params.append(filters["created_to"][0])
+    # updated：支持新格式 {"gte": x, "lte": y} 和旧格式数组
+    updated = filters.get("updated")
+    if isinstance(updated, dict):
+        if updated.get("gte"):
+            query += " AND updated >= ?"; params.append(updated["gte"])
+        if updated.get("lte"):
+            query += " AND updated <= ?"; params.append(updated["lte"])
+    else:
+        if filters.get("updated_from"):
+            query += " AND updated >= ?"; params.append(filters["updated_from"][0])
+        if filters.get("updated_to"):
+            query += " AND updated <= ?"; params.append(filters["updated_to"][0])
     query += " ORDER BY id ASC"
     rows = conn.execute(query, params).fetchall()
     conn.close()
@@ -181,6 +239,7 @@ def list_skills():
 async def execute_skill(body: dict):
     message = body.get("message", "")
     session_id = body.get("session_id")
+    is_hitl_response = body.get("hitl_response", False)
     conn = db()
 
     if not session_id:
@@ -209,14 +268,40 @@ async def execute_skill(body: dict):
         )
         conn.commit()
 
-    result = await skill_framework.execute_skill(message, conn)
+    history_rows = conn.execute(
+        "SELECT role, text FROM chat_messages WHERE session_id=? ORDER BY id ASC LIMIT 20",
+        (session_id,)
+    ).fetchall()
+    history = [{"role": r["role"], "text": r["text"]} for r in history_rows]
+
+    # HITL 响应：从历史中取上一条 AI 消息所用的 skill，跳过重新路由
+    forced_skill = None
+    if is_hitl_response:
+        last_skill_row = conn.execute(
+            """SELECT text FROM chat_messages WHERE session_id=? AND role='ai'
+               ORDER BY id DESC LIMIT 1""",
+            (session_id,)
+        ).fetchone()
+        if last_skill_row:
+            forced_skill = await skill_framework.detect_skill_from_reply(last_skill_row["text"])
+
+    result = await skill_framework.execute_skill(message, conn, history=history, forced_skill=forced_skill)
     reply = result.get("reply", "")
 
     hitl_json = None
+    apicall_json = None
+
     if reply and "```hitl" in reply:
         try:
             hitl_part = reply.split("```hitl")[1].split("```")[0]
             hitl_json = json.loads(hitl_part)
+        except Exception:
+            pass
+
+    if reply and "```apicall" in reply:
+        try:
+            apicall_part = reply.split("```apicall")[1].split("```")[0]
+            apicall_json = json.loads(apicall_part)
         except Exception:
             pass
 
@@ -230,6 +315,11 @@ async def execute_skill(body: dict):
     )
     conn.commit()
     conn.close()
+
+    if apicall_json:
+        result["apicall"] = apicall_json
+    if hitl_json:
+        result["hitl"] = hitl_json
     return result
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
   };
 
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, extraBody = {}) => {
     if (!text.trim() || loading) return;
     const isFirst = messages.length === 0;
     setMessages(prev => [...prev, { role: 'user', text }]);
@@ -72,7 +72,7 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       const res = await fetch(`${api}/api/skill/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, session_id: sessionId })
+        body: JSON.stringify({ message: text, session_id: sessionId, ...extraBody })
       });
       const data = await res.json();
 
@@ -120,9 +120,19 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       setMessages(prev => prev.map((m, i) =>
         i === prev.length - 1 ? { ...m, apicallResult: result } : m
       ));
-    } else if (action !== 'cancel') {
-      await sendMessage(action);
+    } else if (action !== 'cancel' && action !== '取消查询') {
+      await sendMessage(action, { hitl_response: true });
     }
+  };
+
+  const [copiedIdx, setCopiedIdx] = useState(null);
+
+  const copyMessage = (msg, i) => {
+    const text = msg.text || '';
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(i);
+      setTimeout(() => setCopiedIdx(null), 1500);
+    });
   };
 
   const handleKeyDown = (e) => {
@@ -167,6 +177,26 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
                     readonly={!(pendingHITL && i === messages.length - 1)}
                     onAction={handleHITLAction}
                   />
+                )}
+                {msg.text && (
+                  <div className="msg-actions">
+                    <button
+                      className={`msg-copy-btn ${copiedIdx === i ? 'msg-copy-btn--copied' : ''}`}
+                      onClick={() => copyMessage(msg, i)}
+                      title="复制"
+                    >
+                      {copiedIdx === i ? (
+                        <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+                          <path d="M2 7l4 4 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+                          <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+                          <path d="M2 10V2h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

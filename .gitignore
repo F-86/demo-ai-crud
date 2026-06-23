@@ -23,3 +23,7 @@ frontend/build/
 .DS_Store
 Thumbs.db
 backend/demo.db
+
+# 运行时生成
+logs/
+pids/
