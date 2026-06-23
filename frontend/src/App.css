@@ -327,6 +327,55 @@ body {
   white-space: pre-wrap;
   color: var(--text);
 }
+
+/* Markdown 渲染样式 */
+.gpt-text--markdown {
+  white-space: normal;
+}
+.gpt-text--markdown p {
+  margin: 0 0 0.6em;
+}
+.gpt-text--markdown p:last-child {
+  margin-bottom: 0;
+}
+.gpt-text--markdown strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.gpt-text--markdown ul,
+.gpt-text--markdown ol {
+  margin: 0.4em 0 0.6em;
+  padding-left: 1.4em;
+}
+.gpt-text--markdown li {
+  margin-bottom: 0.2em;
+}
+.gpt-text--markdown h1,
+.gpt-text--markdown h2,
+.gpt-text--markdown h3 {
+  margin: 0.6em 0 0.3em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.gpt-text--markdown code {
+  background: rgba(255,255,255,0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.88em;
+}
+.gpt-text--markdown pre {
+  background: rgba(0,0,0,0.3);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.gpt-text--markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
 .gpt-row--user .gpt-text {
   background: var(--accent);
   padding: 10px 16px;

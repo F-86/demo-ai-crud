@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 const SUGGESTIONS = ['查一下所有商品', '帮我添加一个商品', '修改商品信息', '删除一个商品'];
 
@@ -157,7 +158,11 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
             <div key={i} className={`gpt-row gpt-row--${msg.role}`}>
               {msg.role === 'ai' && <div className="gpt-avatar">✦</div>}
               <div className="gpt-bubble">
-                {msg.text && <div className="gpt-text">{msg.text}</div>}
+                {msg.text && (
+                  <div className="gpt-text gpt-text--markdown">
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
+                )}
                 {msg.hitl && (
                   <div className="hitl-block">
                     {JSON.stringify(msg.hitl, null, 2)}
