@@ -48,12 +48,13 @@ def _build_system_prompt() -> str:
     
     skills_text = "\n\n".join(skills_desc) if skills_desc else "当前没有注册任何 skill。"
     
-    return f"""你是一个严格的 AI 助手。你必须遵守以下规则：
+    return f"""你是一个 AI 助手，专门帮助用户管理商品数据。你必须遵守以下规则：
 
 ## 核心规则
 1. **必须调用 skill 才能执行操作**。你不能自由发挥、不能猜测、不能编造数据。
-2. 如果用户的需求**没有匹配的 skill**，你必须回复：「抱歉，当前没有这个能力。」
-3. 如果匹配到了 skill，按该 skill 定义的流程执行，用 ````hitl` JSON 块与用户交互。
+2. 如果用户在**打招呼、问候、询问你的能力**，友好地介绍自己，说明你能做什么（列出可用 skill 的功能）。
+3. 如果用户的需求**超出 skill 范围**，先礼貌地说明无法处理，再简短介绍你的能力范围。
+4. 如果匹配到了 skill，按该 skill 定义的流程执行，用 ````hitl` JSON 块与用户交互。
 
 ## HITL 协议
 当需要用户确认或补充信息时，输出 ````hitl` 块：
@@ -75,8 +76,9 @@ def _build_system_prompt() -> str:
 {skills_text}
 
 ## 输出格式
+- 打招呼 / 问能力 → 友好介绍自己和可用能力，不要输出 ````hitl` 块
 - 匹配到 skill → 按 skill 流程执行，可能输出 ````hitl` 块
-- 未匹配到 skill → 回复：「抱歉，当前没有这个能力。」
+- 超出能力范围 → 礼貌说明，并简介能力范围
 - 输出纯文本 + 可选的 ````hitl` 块，不要输出 JSON 以外的代码块
 """
 
@@ -117,7 +119,22 @@ async def execute_skill(message: str, db) -> dict:
             break
     
     if not matched or skill_name == "NONE":
-        return {"matched": False, "reply": "抱歉，当前没有这个能力。", "skill": None}
+        # 让 LLM 用系统提示自由回复（打招呼/介绍能力/超范围说明）
+        try:
+            system_prompt = _build_system_prompt()
+            resp2 = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.7,
+                max_tokens=512,
+            )
+            reply = resp2.choices[0].message.content.strip()
+        except Exception as e:
+            reply = f"抱歉，当前没有这个能力。（LLM 调用失败: {e}）"
+        return {"matched": False, "reply": reply, "skill": None}
     
     # Execute skill with full LLM prompt
     try:
