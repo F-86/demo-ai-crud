@@ -1,8 +1,9 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from typing import Any
 import sqlite3
 import json
 
@@ -336,7 +337,8 @@ async def execute_skill(body: dict):
 
 
 @app.post("/api/chat/messages/{msg_id}/apicall_result")
-def save_apicall_result(msg_id: int, body: dict):
+async def save_apicall_result(msg_id: int, request: Request):
+    body = await request.json()
     conn = db()
     conn.execute(
         "UPDATE chat_messages SET apicall_result=? WHERE id=?",
