@@ -13,6 +13,15 @@ def get_connection():
 def init_db():
     conn = get_connection()
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            role    TEXT NOT NULL CHECK(role IN ('user','ai')),
+            text    TEXT NOT NULL,
+            hitl    TEXT,
+            created TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,

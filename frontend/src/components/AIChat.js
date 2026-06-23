@@ -1,22 +1,47 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+
+const SUGGESTIONS = ['查一下所有商品', '帮我添加一个商品', '修改商品信息', '删除一个商品'];
 
 function AIChat({ api }) {
-  const [messages, setMessages] = useState([
-    { role: 'system', text: '💬 这是一个 AI 对话演示。输入文字与商品 CRUD skill 交互。' +
-      '\n\n可尝试的指令：\n- "查一下所有商品"\n- "帮我添加一个商品"\n- "修改商品"\n- "删除商品"' }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [pendingHITL, setPendingHITL] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await fetch(`${api}/api/chat/history`);
+      const data = await res.json();
+      setMessages(data.map(m => ({ role: m.role, text: m.text, hitl: m.hitl || null })));
+    } catch {
+      // 静默失败
+    }
+    setHistoryLoaded(true);
+  }, [api]);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const autoResize = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+  };
 
   const sendMessage = async (text) => {
-    if (!text.trim()) return;
+    if (!text.trim() || loading) return;
     setMessages(prev => [...prev, { role: 'user', text }]);
     setInput('');
+    setTimeout(autoResize, 0);
     setLoading(true);
+    setPendingHITL(null);
 
     try {
       const res = await fetch(`${api}/api/skill/execute`, {
@@ -25,7 +50,7 @@ function AIChat({ api }) {
         body: JSON.stringify({ message: text })
       });
       const data = await res.json();
-      
+
       if (data.reply && data.reply.includes('```hitl')) {
         const parts = data.reply.split('```hitl');
         const textBefore = parts[0];
@@ -41,9 +66,15 @@ function AIChat({ api }) {
         setMessages(prev => [...prev, { role: 'ai', text: data.reply }]);
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'ai', text: `❌ 请求失败: ${err.message}` }]);
+      setMessages(prev => [...prev, { role: 'ai', text: `请求失败: ${err.message}` }]);
     }
     setLoading(false);
+  };
+
+  const clearHistory = async () => {
+    await fetch(`${api}/api/chat/history`, { method: 'DELETE' });
+    setMessages([]);
+    setPendingHITL(null);
   };
 
   const handleHITLAction = async (action) => {
@@ -58,62 +89,124 @@ function AIChat({ api }) {
     }
   };
 
+  const renderHITLActions = (hitl) => {
+    const decision = hitl?.checkpoint?.decisions?.[0];
+    if (!decision) return null;
+
+    if (decision.type === 'input') {
+      return (
+        <div className="hitl-input-row">
+          <input
+            className="hitl-text-input"
+            placeholder="输入信息..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.target.value) {
+                handleHITLAction(e.target.value);
+                e.target.value = '';
+              }
+            }}
+          />
+          <button className="hitl-btn primary" onClick={(e) => {
+            const inp = e.target.closest('.hitl-input-row').querySelector('input');
+            if (inp?.value) { handleHITLAction(inp.value); inp.value = ''; }
+          }}>提交</button>
+        </div>
+      );
+    }
+
+    if (decision.type === 'confirm') {
+      return (
+        <div className="hitl-actions">
+          <button className="hitl-btn danger" onClick={() => handleHITLAction('confirm')}>确认</button>
+          <button className="hitl-btn default" onClick={() => handleHITLAction('cancel')}>取消</button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="hitl-actions">
+        {decision.options?.map((opt, i) => (
+          <button key={i}
+            className={`hitl-btn ${opt.value.includes('confirm') || opt.value === 'approve' ? 'danger' : opt.value === 'cancel' ? 'default' : 'primary'}`}
+            onClick={() => handleHITLAction(opt.value)}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  if (!historyLoaded) return null;
+
   return (
-    <div className="chat-container">
-      <div className="messages">
-        {messages.map((msg, i) => (
-          <div key={i} className={`msg ${msg.role}`}>
-            {msg.text}
-            {msg.hitl && (
-              <div className="hitl-block">
-                {JSON.stringify(msg.hitl, null, 2)}
+    <div className="gpt-chat">
+      {messages.length === 0 ? (
+        <div className="gpt-welcome">
+          <div className="gpt-logo">✦</div>
+          <h2 className="gpt-welcome-title">有什么可以帮你的？</h2>
+          <div className="gpt-suggestions">
+            {SUGGESTIONS.map(s => (
+              <button key={s} className="gpt-suggestion" onClick={() => sendMessage(s)}>{s}</button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="gpt-toolbar">
+            <button className="gpt-clear-btn" onClick={clearHistory}>清空对话</button>
+          </div>
+          <div className="gpt-messages">
+            {messages.map((msg, i) => (
+              <div key={i} className={`gpt-row gpt-row--${msg.role}`}>
+                {msg.role === 'ai' && <div className="gpt-avatar">✦</div>}
+                <div className="gpt-bubble">
+                  {msg.text && <div className="gpt-text">{msg.text}</div>}
+                  {msg.hitl && (
+                    <div className="hitl-block">
+                      {JSON.stringify(msg.hitl, null, 2)}
+                    </div>
+                  )}
+                  {msg.hitl && pendingHITL && i === messages.length - 1 &&
+                    renderHITLActions(pendingHITL)
+                  }
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="gpt-row gpt-row--ai">
+                <div className="gpt-avatar">✦</div>
+                <div className="gpt-bubble">
+                  <div className="gpt-typing"><span /><span /><span /></div>
+                </div>
               </div>
             )}
+            <div ref={bottomRef} />
           </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {pendingHITL && (
-        <div className="hitl-actions" style={{ padding: '8px 0' }}>
-          {pendingHITL.checkpoint?.decisions?.[0]?.options?.map((opt, i) => (
-            <button key={i}
-              className={`hitl-btn ${opt.value.includes('confirm') || opt.value === 'approve' ? 'danger' : opt.value === 'cancel' ? 'default' : 'primary'}`}
-              onClick={() => handleHITLAction(opt.value)}>
-              {opt.label}
-            </button>
-          ))}
-          {pendingHITL.checkpoint?.decisions?.[0]?.type === 'input' && (
-            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-              <input style={{ flex: 1, padding: '8px 12px', background: '#1a1b23', border: '1px solid #2a2b35', borderRadius: 8, color: '#e1e2e6' }}
-                placeholder="输入信息..."
-                onKeyDown={(e) => { if (e.key === 'Enter') handleHITLAction(e.target.value); }} />
-              <button className="hitl-btn primary" onClick={() => {
-                const val = document.querySelector('.hitl-actions input')?.value;
-                if (val) handleHITLAction(val);
-              }}>提交</button>
-            </div>
-          )}
-          {pendingHITL.checkpoint?.decisions?.[0]?.type === 'confirm' && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="hitl-btn danger" onClick={() => handleHITLAction('confirm')}>确认</button>
-              <button className="hitl-btn default" onClick={() => handleHITLAction('cancel')}>取消</button>
-            </div>
-          )}
-        </div>
+        </>
       )}
 
-      <div className="chat-input-area">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="输入指令，如「查一下所有商品」..."
-          disabled={loading}
-        />
-        <button onClick={() => sendMessage(input)} disabled={loading || !input.trim()}>
-          {loading ? '...' : '发送'}
-        </button>
+      <div className="gpt-input-wrap">
+        <div className="gpt-input-box">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => { setInput(e.target.value); autoResize(); }}
+            onKeyDown={handleKeyDown}
+            placeholder="给 AI 发消息…"
+            disabled={loading}
+            rows={1}
+          />
+          <button
+            className={`gpt-send ${input.trim() && !loading ? 'gpt-send--active' : ''}`}
+            onClick={() => sendMessage(input)}
+            disabled={loading || !input.trim()}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 13V3M3 8l5-5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <p className="gpt-hint">AI 可能会犯错，请注意核查重要信息。</p>
       </div>
     </div>
   );

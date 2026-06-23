@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import sqlite3
+import json
 
 load_dotenv()  # 加载 .env 文件到环境变量
 
@@ -105,6 +106,32 @@ def delete_product(pid: int):
     conn.close()
     return {"ok": True, "deleted_id": pid}
 
+# ─── Chat History ──────────────────────────────────────────
+
+@app.get("/api/chat/history")
+def get_chat_history(limit: int = 100):
+    conn = db()
+    rows = conn.execute(
+        "SELECT id, role, text, hitl, created FROM chat_messages ORDER BY id ASC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        msg = {"id": r["id"], "role": r["role"], "text": r["text"], "created": r["created"]}
+        if r["hitl"]:
+            msg["hitl"] = json.loads(r["hitl"])
+        result.append(msg)
+    return result
+
+@app.delete("/api/chat/history")
+def clear_chat_history():
+    conn = db()
+    conn.execute("DELETE FROM chat_messages")
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
 # ─── Skills ────────────────────────────────────────────────
 
 @app.get("/api/skills")
@@ -115,7 +142,29 @@ def list_skills():
 async def execute_skill(body: dict):
     message = body.get("message", "")
     conn = db()
+
+    conn.execute(
+        "INSERT INTO chat_messages (role, text) VALUES (?, ?)",
+        ("user", message)
+    )
+    conn.commit()
+
     result = await skill_framework.execute_skill(message, conn)
+    reply = result.get("reply", "")
+
+    hitl_json = None
+    if reply and "```hitl" in reply:
+        try:
+            hitl_part = reply.split("```hitl")[1].split("```")[0]
+            hitl_json = json.loads(hitl_part)
+        except Exception:
+            pass
+
+    conn.execute(
+        "INSERT INTO chat_messages (role, text, hitl) VALUES (?, ?, ?)",
+        ("ai", reply, json.dumps(hitl_json, ensure_ascii=False) if hitl_json else None)
+    )
+    conn.commit()
     conn.close()
     return result
 
