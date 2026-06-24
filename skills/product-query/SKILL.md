@@ -25,7 +25,7 @@ license: MIT
 | 字段 | 类型 | 收集方式 | 说明 |
 |------|------|----------|------|
 | `id` | `number[]` | **直接从用户输入提取，不在 CP-1a 中展示** | 商品 ID 精确匹配，如 `[1, 3, 5]` |
-| `name` | `string` | 直接从用户输入提取，不在 CP-1a 中展示 | 商品名称模糊匹配，如 `"MacBook Pro"` |
+| `name` | `string \| string[]` | 直接从用户输入提取，不在 CP-1a 中展示 | 名称模糊匹配；单个名称用字符串，多个名称用数组（OR 查询），如 `["可乐", "香蕉"]` |
 | `category` | `string[]` | CP-1a `combobox` | 分类精确匹配，枚举值由 `GET /api/products/categories` 返回 |
 | `price` | `{gte?, lte?}` | CP-1a `number_range` | 价格区间（元） |
 | `created` | `{gte?, lte?}` | CP-1a `datetime_range` | 上架时间区间 |
@@ -37,8 +37,11 @@ license: MIT
 // 全量
 {}
 
-// 按名称
+// 按名称（单个）
 {"name": "MacBook Pro"}
+
+// 按名称（多个，OR 查询）
+{"name": ["可乐", "香蕉"]}
 
 // 按 ID
 {"id": [1, 3, 5]}

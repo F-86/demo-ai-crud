@@ -68,8 +68,16 @@ def query_products(body: dict):
         query += f" AND id IN ({placeholders})"
         params.extend(filters["id"])
     if filters.get("name"):
-        query += " AND name LIKE ?"
-        params.append(f"%{filters['name']}%")
+        name_val = filters["name"]
+        # 支持数组（多名称 OR 查询）和字符串（单名称模糊匹配）
+        if isinstance(name_val, list):
+            if name_val:
+                clauses = " OR ".join(["name LIKE ?" for _ in name_val])
+                query += f" AND ({clauses})"
+                params.extend(f"%{n}%" for n in name_val)
+        else:
+            query += " AND name LIKE ?"
+            params.append(f"%{name_val}%")
     if filters.get("category"):
         placeholders = ",".join("?" * len(filters["category"]))
         query += f" AND category IN ({placeholders})"
