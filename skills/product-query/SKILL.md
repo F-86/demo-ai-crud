@@ -73,14 +73,16 @@ license: MIT
 
 ### 核心规则（最高优先级）
 
-**只有用户明确说"查全部/所有商品/列出全部"时才跳过表单直接执行。其他一切情况，即使你已经提取到了部分参数，也必须输出 CP-1a 询问用户剩余条件怎么填。** 用户跳过所有 decision 再提交，才是真正的全量查询。
+1. **CP-1a 一轮查询只出一次**：用户的一次查询请求，从输入到执行只允许出现一次 CP-1a。无论是否已提取到部分参数，都把它们用 `default` 预填到同一个 CP-1a 中一次性收集，**禁止分多轮询问**（先问价格、再问分类、再问时间是错误的）。
+2. **CP-1a 提交由前端直接执行，不再经过 LLM**：前端把表单值注入 `checkpoint.apicall.body.filters` 后直接 fetch，LLM 不会收到提交结果，也不需要生成下一轮回复。
+3. **只有用户明确说"查全部/所有商品/列出全部"时才跳过 CP-1a 直接执行**。
 
 ### 提取原则
 
 1. **能确定的就直接提取**——数值、名称、日期等明确信息，直接填入对应 decision 的 `default` 值
 2. **category 必须通过 combobox 让用户选择**——枚举值来自后端 `GET /api/products/categories`，不可自行猜测映射（"吃的"→"食品"不行）
 3. **拿不准的不猜**——模糊表述如"便宜的"、"最近的"不要假设数值，留给用户填写
-4. **总是展示所有查询参数的 decision**——即使用户已提供了部分参数（如名称），也展示 CP-1a 列出全部可选字段，让用户补全或直接提交
+4. **CP-1a 展示全部查询参数**——已提取的用 `default` 预填，未提取的留空，让用户在**同一个表单内**一次性补全或跳过
 
 ### 识别示例
 
@@ -99,30 +101,23 @@ license: MIT
 ```
 用户输入
    ▼
-Phase 0  提取已明确的参数
-   ├─ 明确说"查全部/所有商品/列出全部" → 直接输出 apicall，filters: {}
-   └─ 其他一切情况 → 进入 Phase 1，输出 CP-1a
+路由识别（看当前用户消息）
+   ├─ ① 明确说"查全部/所有商品/列出全部" → 直接输出 apicall，filters: {}
+   └─ ② 其他（含查询语义/有可提取参数/模糊查询）→ 输出 CP-1a（整轮对话只输出一次）
    ▼
-Phase 1  补全参数
-   ★ CP-1a — 展示全部 decision，已提取的参数用 default 预填
-   用户点击【提交】→ 前端把表单数据序列化为 JSON 字符串发回后端
-   ▼
-路由识别：判断当前用户消息是"新查询意图"还是"CP-1a 提交结果"
-   ├─ 新查询意图：含查询语义（查/找/列出/搜索）→ 进入 Phase 1 重新走 CP-1a
-   └─ CP-1a 提交结果：JSON 字符串（以 `{` 开头）→ **必须直接进入 CP-2 输出 CP-1b**
-   ▼
-Phase 2  确认 & 执行
-   ★ CP-1b — 展示已收集的条件（自然语言 + readonly 组件）+ hitl 确认块
-   hitl checkpoint 内嵌 `apicall`，用户点击【执行查询】→ 前端直接执行
+CP-1a — 一次性收集
+   展示全部 decision，已提取的参数用 default 预填
+   checkpoint 内嵌 apicall 模板（filters 为空，由前端在用户提交时填充）
+   用户点击【提交】→ 前端直接用表单值填充 apicall 并执行，不再发给 LLM
 ```
 
 ### 关键规则
 
+- **CP-1a 一轮查询只出一次**——不论是否预填了 default、不论提取到几个参数，都只展示一次 CP-1a。**禁止"先提取部分参数 → 出 CP-1a → 再次确认 → 再出 CP-1a 询问其他条件"**
+- **CP-1a 提交由前端直接执行**——前端把表单值注入 checkpoint.apicall.body.filters 后直接 fetch，不再经过 LLM
 - **禁止用 `input` 类型收集查询字段**——查询条件只用 `combobox` / `number_range` / `datetime_range`
-- **已提取的参数用 `default` 字段预填**，用户可修改或跳过
-- **CP-1a 提交后必须输出 CP-1b**——不要输出任何自然语言询问，直接用 JSON 中的字段构造 readonly + choice + apicall
-- **CP-1b hitl checkpoint 必须包含 `apicall`**——前端直接执行，无需再问 LLM
-- **只有用户明确说"查全部"才跳过 Phase 1**，其他情况一律展示 CP-1a
+- **已提取的参数用 `default` 字段预填**，用户可在 CP-1a 中修改/补充/跳过
+- **只有用户明确说"查全部"才跳过 CP-1a**，其他情况一律展示一次 CP-1a
 
 ---
 
@@ -133,14 +128,14 @@ Phase 2  确认 & 执行
 | `combobox` | 分类选择，前端拉取值 | CP-1a |
 | `number_range` | 价格范围 | CP-1a |
 | `datetime_range` | 时间范围 | CP-1a |
-| `readonly` | 只读展示已收集的值（可视化组件） | CP-1b，含 `field`/`label`/`value` |
-| `choice` | 执行/重填/取消 | CP-1b |
 
 ---
 
 ## ★ CP-1a — 条件收集
 
 **始终展示全部决策字段**（combobox / number_range / datetime_range）。已从用户输入中提取的参数用 `default` 字段预填值，其他字段留空让用户自行填写或跳过。
+
+**checkpoint 必须包含 `apicall` 模板**（`filters` 留空 `{}`），前端提交时会把表单值注入 `apicall.body.filters` 后直接执行，不再发给 LLM。
 
 `default` 格式：
 - `number_range`：`"default": {"gte": 10, "lte": 100}`
@@ -156,6 +151,7 @@ Phase 2  确认 & 执行
     "phase": "Phase 1",
     "summary": "请选择筛选条件，不需要的直接跳过，所有条件均为可选",
     "action": "wait",
+    "apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}},
     "decisions": [
       {
         "id": "d-1",
@@ -198,72 +194,7 @@ Phase 2  确认 & 执行
 }
 ```
 
----
-
-## ★ CP-1b — 条件确认
-
-### 触发条件
-
-当**当前用户消息是 JSON 字符串**（以 `{` 开头，如 `{"price":{"gte":10,"lte":100}}`）时，这是 CP-1a 表单的提交结果。**不要输出任何自然语言询问，直接输出 CP-1b**。
-
-构造方法：
-- 把 JSON 中每个非空字段映射为一个 `readonly` decision
-- 添加一个 `choice` decision 包含"执行/重填/取消"三个选项
-- 把 JSON 完整填入 `checkpoint.apicall.body.filters`
-
-### 输出格式
-
-严格按此顺序：
-1. 一句自然语言引导（如"请确认查询条件："）
-2. ```hitl 确认块（含 readonly + choice + apicall）
-
-**绝对禁止**在 CP-1b 之前输出多余的询问/建议文字。
-
-### 示例（用户提交 `{"price":{"gte":10,"lte":100}}`）
-
-```text
-请确认查询条件：
-
-```hitl
-{
-  "version": "1.0",
-  "checkpoint": {
-    "id": "cp-1b",
-    "name": "查询条件确认",
-    "phase": "Phase 2",
-    "summary": "已收集查询条件，请确认后执行查询",
-    "action": "wait",
-    "apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {"price": {"gte": 10, "lte": 100}}}},
-    "decisions": [
-      {
-        "id": "d-readonly",
-        "type": "readonly",
-        "field": "price",
-        "label": "价格区间",
-        "unit": "元",
-        "value": {"gte": 10, "lte": 100}
-      },
-      {
-        "id": "d-1",
-        "type": "choice",
-        "question": "是否确认以上查询条件？",
-        "options": [
-          {"value": "execute", "label": "✅ 执行查询"},
-          {"value": "重新填写查询条件", "label": "✏️ 重新填写"},
-          {"value": "取消查询", "label": "❌ 取消"}
-        ],
-        "default": "execute"
-      }
-    ]
-  }
-}
-```
-
-### 用户选择路由
-
-- `execute` → 前端直接用 checkpoint.apicall 执行，**不经过 LLM**
-- `重新填写查询条件` → 返回 CP-1a
-- `取消查询` → 结束
+用户点击【提交】后，前端把表单值注入 `apicall.body.filters` 并直接执行查询，结果持久化到数据库，**不再经过 LLM**。
 
 ---
 
@@ -286,3 +217,5 @@ Phase 2  确认 & 执行
 3. **category 猜值映射** → 必须 combobox，禁止"吃的→食品"
 4. **模糊表述自设数值** → "便宜的"、"最近的"不猜，展示空 decision 让用户填
 5. **已提取的参数忘记设 default** → 用 `default` 字段预填，用户可跳过或修改
+6. **CP-1a 出现两次** → 一轮查询只允许一次 CP-1a。**反例**：用户说"价格 10~100"，先出一次 CP-1a 预填价格，又出一次 CP-1a 写 summary"价格已设置，请补充其他条件"。正确做法：第一次 CP-1a 就要把价格 default 预填好同时展示其他字段，用户在同一个表单内一次性补全。
+7. **CP-1a 缺少 `apicall` 模板** → checkpoint 必须带 `"apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}}`，前端提交时注入 filters 直接执行

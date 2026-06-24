@@ -242,7 +242,7 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
     return false;
   };
 
-  const handleSubmit = () => {
+  const buildFilters = () => {
     const out = {};
     decisions.forEach(d => {
       const f = d.field || d.name;
@@ -270,7 +270,21 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
         (d.fields || []).forEach(fi => { if (values[fi.name]) out[fi.name] = values[fi.name]; });
       }
     });
-    onAction(JSON.stringify(out));
+    return out;
+  };
+
+  const handleSubmit = () => {
+    const out = buildFilters();
+    // 如果 checkpoint 带有 apicall 模板（如 product-query），直接填入 filters 并执行
+    if (apicall) {
+      const filledApicall = {
+        ...apicall,
+        body: { ...apicall.body, filters: out },
+      };
+      onAction('execute', filledApicall);
+    } else {
+      onAction(JSON.stringify(out));
+    }
   };
 
   const currentDecision = decisions[index];
