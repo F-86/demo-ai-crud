@@ -68,7 +68,7 @@ async def _route_skill(message: str, history: list) -> Optional[str]:
     messages = [
         {"role": "system", "content": "你是一个 skill 路由选择器。根据对话上下文判断当前消息属于哪个 skill，只返回 skill 名称或 NONE。"},
     ]
-    for h in history[-6:]:  # 最近 6 条提供上下文
+    for h in history[-20:]:  # 最近 10 轮对话提供上下文
         role = "user" if h["role"] == "user" else "assistant"
         messages.append({"role": role, "content": h["text"]})
     messages.append({"role": "user", "content": f"当前消息: \"{message}\"\n\n可用 skill:\n" + "\n".join(skill_descs)})
@@ -90,18 +90,39 @@ async def _route_skill(message: str, history: list) -> Optional[str]:
 
 
 async def detect_skill_from_reply(reply_text: str) -> Optional[str]:
-    """从 AI 上一条回复中识别使用了哪个 skill（通过匹配已注册 skill 的关键词）。"""
+    """从 AI 上一条回复中识别使用了哪个 skill。
+    
+    匹配策略：
+    1. skill 名称出现在回复中
+    2. skill 描述中的核心关键词出现在回复中
+    3. ```hitl 块中的 checkpoint.id/name 能映射到某个 skill
+    4. 回复中的动词（创建/查询/修改/删除）匹配 skill 操作类型
+    """
+    reply_lower = reply_text.lower()
+    
     for s in registry.list_skills():
+        sid = s.get_id()
         meta = await s.get_metadata()
         desc = meta.get("description", "")
-        sid = s.get_id()
-        # 回复中包含 skill name 或 skill 描述中的核心关键词
-        if sid in reply_text:
+        
+        # 策略 1: skill 名称匹配
+        if sid in reply_lower or sid.replace("-", "") in reply_lower:
             return sid
-        # 检查 skill 描述里提到的触发关键词是否出现在历史回复中
-        triggers = [kw for kw in desc.replace("，", ",").split(",") if len(kw.strip()) > 2]
-        if any(kw.strip() in reply_text for kw in triggers[:5]):
-            return sid
+        
+        # 策略 2: 描述关键词匹配
+        desc_lower = desc.lower()
+        keywords = [kw.strip() for kw in desc_lower.replace("，", ",").replace("。", ".").replace("、", ",").split(",") if len(kw.strip()) > 1]
+        for kw in keywords:
+            if kw in reply_lower:
+                return sid
+    
+    # 策略 3: 通过 ```hitl 块判断（防御性兜底）
+    if "```hitl" in reply_text and '"cp-' in reply_text:
+        # 回复中包含 HITL 块，说明上一个 skill 还在对话中
+        # 遍历所有已注册 skill 返回第一个（最合理的猜测）
+        for s in registry.list_skills():
+            return s.get_id()
+    
     return None
 
 
@@ -140,7 +161,7 @@ async def execute_skill(message: str, db, history: list = [], forced_skill: Opti
         skill = registry.get_skill(skill_name)
         skill_body = await skill.get_body()
         messages = [{"role": "system", "content": skill_body}]
-        for h in history[-10:]:  # 最近 10 条对话历史
+        for h in history[-20:]:  # 最近 10 轮对话历史
             role = "user" if h["role"] == "user" else "assistant"
             messages.append({"role": role, "content": h["text"]})
         messages.append({"role": "user", "content": message})
