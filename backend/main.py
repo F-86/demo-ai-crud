@@ -57,69 +57,75 @@ def list_products(
 def list_categories():
     return [{"value": c, "label": c} for c in ["玩具", "服装", "饮料", "食品", "数码"]]
 
-@app.post("/api/products/query")
-def query_products(body: dict):
-    filters = body.get("filters", {})
-    conn = db()
-    query = "SELECT * FROM products WHERE 1=1"
-    params = []
+def _build_filter_sql(filters: dict) -> tuple[str, list]:
+    """根据 filters 拼出 SQL WHERE 子句（不含 WHERE 关键字，从 ' AND ...' 开始）+ 参数列表。
+
+    供 /api/products/query 和 /api/products/bulk_update 共享。
+    """
+    where = ""
+    params: list = []
     if filters.get("id"):
         placeholders = ",".join("?" * len(filters["id"]))
-        query += f" AND id IN ({placeholders})"
+        where += f" AND id IN ({placeholders})"
         params.extend(filters["id"])
     if filters.get("name"):
         name_val = filters["name"]
-        # 支持数组（多名称 OR 查询）和字符串（单名称模糊匹配）
         if isinstance(name_val, list):
             if name_val:
                 clauses = " OR ".join(["name LIKE ?" for _ in name_val])
-                query += f" AND ({clauses})"
+                where += f" AND ({clauses})"
                 params.extend(f"%{n}%" for n in name_val)
         else:
-            query += " AND name LIKE ?"
+            where += " AND name LIKE ?"
             params.append(f"%{name_val}%")
     if filters.get("category"):
         placeholders = ",".join("?" * len(filters["category"]))
-        query += f" AND category IN ({placeholders})"
+        where += f" AND category IN ({placeholders})"
         params.extend(filters["category"])
-    # price：支持新格式 {"gte": x, "lte": y} 和旧格式数组
     price = filters.get("price")
     if isinstance(price, dict):
         if price.get("gte") is not None:
-            query += " AND price >= ?"; params.append(price["gte"])
+            where += " AND price >= ?"; params.append(price["gte"])
         if price.get("lte") is not None:
-            query += " AND price <= ?"; params.append(price["lte"])
+            where += " AND price <= ?"; params.append(price["lte"])
     else:
         if filters.get("price_min"):
-            query += " AND price >= ?"; params.append(filters["price_min"][0])
+            where += " AND price >= ?"; params.append(filters["price_min"][0])
         if filters.get("price_max"):
-            query += " AND price <= ?"; params.append(filters["price_max"][0])
-    # created：支持新格式 {"gte": x, "lte": y} 和旧格式数组
+            where += " AND price <= ?"; params.append(filters["price_max"][0])
     created = filters.get("created")
     if isinstance(created, dict):
         if created.get("gte"):
-            query += " AND created >= ?"; params.append(created["gte"])
+            where += " AND created >= ?"; params.append(created["gte"])
         if created.get("lte"):
-            query += " AND created <= ?"; params.append(created["lte"])
+            where += " AND created <= ?"; params.append(created["lte"])
     else:
         if filters.get("created_from"):
-            query += " AND created >= ?"; params.append(filters["created_from"][0])
+            where += " AND created >= ?"; params.append(filters["created_from"][0])
         if filters.get("created_to"):
-            query += " AND created <= ?"; params.append(filters["created_to"][0])
-    # updated：支持新格式 {"gte": x, "lte": y} 和旧格式数组
+            where += " AND created <= ?"; params.append(filters["created_to"][0])
     updated = filters.get("updated")
     if isinstance(updated, dict):
         if updated.get("gte"):
-            query += " AND updated >= ?"; params.append(updated["gte"])
+            where += " AND updated >= ?"; params.append(updated["gte"])
         if updated.get("lte"):
-            query += " AND updated <= ?"; params.append(updated["lte"])
+            where += " AND updated <= ?"; params.append(updated["lte"])
     else:
         if filters.get("updated_from"):
-            query += " AND updated >= ?"; params.append(filters["updated_from"][0])
+            where += " AND updated >= ?"; params.append(filters["updated_from"][0])
         if filters.get("updated_to"):
-            query += " AND updated <= ?"; params.append(filters["updated_to"][0])
-    query += " ORDER BY id ASC"
-    rows = conn.execute(query, params).fetchall()
+            where += " AND updated <= ?"; params.append(filters["updated_to"][0])
+    return where, params
+
+
+@app.post("/api/products/query")
+def query_products(body: dict):
+    filters = body.get("filters", {})
+    where, params = _build_filter_sql(filters)
+    conn = db()
+    rows = conn.execute(
+        f"SELECT * FROM products WHERE 1=1{where} ORDER BY id ASC", params
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -134,6 +140,31 @@ def create_product(data: ProductCreate):
     row = conn.execute("SELECT * FROM products WHERE id=?", (cur.lastrowid,)).fetchone()
     conn.close()
     return dict(row)
+
+def _resolve_product_id_by_name(conn, locate_name: str) -> int:
+    """按名称（精确）定位单个商品 ID。多条或 0 条均报错。"""
+    rows = conn.execute(
+        "SELECT id, name FROM products WHERE name=?", (locate_name,)
+    ).fetchall()
+    if len(rows) == 0:
+        # 兜底：尝试模糊匹配，仍要求唯一
+        rows = conn.execute(
+            "SELECT id, name FROM products WHERE name LIKE ?", (f"%{locate_name}%",)
+        ).fetchall()
+    if len(rows) == 0:
+        raise HTTPException(404, f"未找到名称为 '{locate_name}' 的商品")
+    if len(rows) > 1:
+        candidates = [{"id": r["id"], "name": r["name"]} for r in rows]
+        raise HTTPException(
+            409,
+            {
+                "error": "name_ambiguous",
+                "message": f"名称 '{locate_name}' 匹配到 {len(rows)} 条商品，请改用 ID 定位",
+                "candidates": candidates,
+            },
+        )
+    return rows[0]["id"]
+
 
 @app.put("/api/products/{pid}")
 def update_product(pid: int, data: ProductUpdate):
@@ -164,6 +195,251 @@ def update_product(pid: int, data: ProductUpdate):
     row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
     conn.close()
     return dict(row)
+
+
+@app.put("/api/products")
+def update_product_by_name(data: ProductUpdate, locate_name: str = None):
+    """按名称定位修改商品。query 参数 locate_name 必填，精确匹配唯一商品后转交常规更新逻辑。
+
+    - 0 条匹配 → 404
+    - 多条匹配 → 409（返回候选列表，由前端/LLM 让用户选 id 再走 /api/products/{pid}）
+    - 1 条匹配 → 执行更新
+    """
+    if not locate_name:
+        raise HTTPException(400, "缺少 locate_name 参数")
+    conn = db()
+    try:
+        pid = _resolve_product_id_by_name(conn, locate_name)
+    finally:
+        conn.close()
+    return update_product(pid, data)
+
+
+# ─── 批量修改 ───────────────────────────────────────────────
+
+def _eval_name_update(row_name: str, name_op: Any) -> str:
+    """根据 name 更新指令计算新名称。
+
+    支持：
+    - 字符串："雪碧"  → 直接替换
+    - {"set": "雪碧"}        → 直接替换
+    - {"suffix": "（易过期）"} → row_name + 后缀
+    - {"prefix": "【新】"}    → 前缀 + row_name
+    - {"replace": ["旧", "新"]} → row_name.replace("旧", "新")
+    """
+    if isinstance(name_op, str):
+        return name_op
+    if isinstance(name_op, dict):
+        if "set" in name_op:
+            return str(name_op["set"])
+        if "suffix" in name_op:
+            return f"{row_name}{name_op['suffix']}"
+        if "prefix" in name_op:
+            return f"{name_op['prefix']}{row_name}"
+        if "replace" in name_op:
+            rep = name_op["replace"]
+            if isinstance(rep, list) and len(rep) == 2:
+                return row_name.replace(rep[0], rep[1])
+            raise HTTPException(400, "name.replace 必须是 [旧, 新] 二元数组")
+    raise HTTPException(400, f"不支持的 name 更新指令: {name_op!r}")
+
+
+def _eval_price_update(row_price: float, price_op: Any) -> float:
+    """根据 price 更新指令计算新价格。
+
+    支持：
+    - 数字：5.5            → 直接设值
+    - {"set": 5.5}          → 直接设值
+    - {"multiply": 1.1}     → row_price * 1.1（按比例涨价/打折）
+    - {"add": 0.5}          → row_price + 0.5（增减固定金额，允许负数）
+    """
+    if isinstance(price_op, (int, float)) and not isinstance(price_op, bool):
+        new_price = float(price_op)
+    elif isinstance(price_op, dict):
+        if "set" in price_op:
+            new_price = float(price_op["set"])
+        elif "multiply" in price_op:
+            new_price = float(row_price) * float(price_op["multiply"])
+        elif "add" in price_op:
+            new_price = float(row_price) + float(price_op["add"])
+        else:
+            raise HTTPException(400, f"不支持的 price 更新指令: {price_op!r}")
+    else:
+        raise HTTPException(400, f"不支持的 price 更新指令: {price_op!r}")
+    # 四舍五入到 2 位
+    new_price = round(new_price, 2)
+    if new_price <= 0:
+        raise HTTPException(400, f"价格计算结果非正数: {new_price}")
+    return new_price
+
+
+@app.post("/api/products/bulk_update")
+def bulk_update_products(body: dict):
+    """按 filters 批量修改商品。
+
+    Body:
+        {
+            "filters": {...},          # 同 /api/products/query 的 filter 协议
+            "update": {
+                "name": "新名" | {"set": "新名"} | {"suffix": "x"} | {"prefix": "x"} | {"replace": ["旧","新"]},
+                "price": 5.5 | {"set":5.5} | {"multiply":1.1} | {"add":0.5},
+                "category": "饮料"      # 只支持直接设值（枚举校验）
+            },
+            "dry_run": true|false,     # 默认 false。true 时只返回匹配列表，不修改
+            "expected_count": int      # 可选。非 dry_run 且提供时，匹配数与之不一致则 409
+        }
+
+    Response:
+        - dry_run=true:
+            {
+                "dry_run": true,
+                "matched": N,
+                "items": [...匹配商品],
+                "preview": [{"id":..., "before": {...}, "after": {...}}, ...]
+            }
+        - dry_run=false:
+            {
+                "dry_run": false,
+                "updated": N,
+                "items": [...更新后的商品]
+            }
+    """
+    filters = body.get("filters") or {}
+    update = body.get("update") or {}
+    dry_run = bool(body.get("dry_run", False))
+    expected_count = body.get("expected_count")
+
+    if not filters:
+        raise HTTPException(400, "filters 不能为空（避免误改全表）")
+    if not update:
+        raise HTTPException(400, "update 不能为空")
+
+    # 提前校验 category 枚举
+    if "category" in update and update["category"] is not None:
+        if update["category"] not in CATEGORIES:
+            raise HTTPException(400, f"分类必须是{', '.join(CATEGORIES)}")
+
+    where, params = _build_filter_sql(filters)
+    conn = db()
+    rows = conn.execute(
+        f"SELECT * FROM products WHERE 1=1{where} ORDER BY id ASC", params
+    ).fetchall()
+    matched = len(rows)
+
+    if matched == 0:
+        conn.close()
+        raise HTTPException(404, "未匹配到任何商品，filters 无结果")
+
+    # 计算每条的 after，提前发现表达式错误
+    preview = []
+    for r in rows:
+        before = dict(r)
+        after = {}
+        if "name" in update and update["name"] is not None:
+            after["name"] = _eval_name_update(before["name"], update["name"])
+        if "price" in update and update["price"] is not None:
+            after["price"] = _eval_price_update(before["price"], update["price"])
+        if "category" in update and update["category"] is not None:
+            after["category"] = update["category"]
+        preview.append({"id": before["id"], "before": before, "after": after})
+
+    # 重名校验（仅当 update 涉及 name 时）：
+    # 1) 批量内部不能出现同名（多条新名相同）
+    # 2) 新名不能与库内其他非本批商品撞名
+    if "name" in update and update["name"] is not None:
+        new_names = [p["after"]["name"] for p in preview]
+        # 内部重名
+        seen = {}
+        for p in preview:
+            n = p["after"]["name"]
+            seen.setdefault(n, []).append(p["id"])
+        dup_in_batch = {n: ids for n, ids in seen.items() if len(ids) > 1}
+        if dup_in_batch:
+            conn.close()
+            raise HTTPException(
+                409,
+                {
+                    "error": "name_collision_in_batch",
+                    "message": "批量修改后将产生同名商品，请调整 name 表达式",
+                    "duplicates": dup_in_batch,
+                },
+            )
+        # 与库内非本批撞名
+        batch_ids = [p["id"] for p in preview]
+        id_placeholders = ",".join("?" * len(batch_ids))
+        name_placeholders = ",".join("?" * len(new_names))
+        clash_rows = conn.execute(
+            f"SELECT id, name FROM products WHERE name IN ({name_placeholders}) "
+            f"AND id NOT IN ({id_placeholders})",
+            [*new_names, *batch_ids],
+        ).fetchall()
+        if clash_rows:
+            conn.close()
+            raise HTTPException(
+                409,
+                {
+                    "error": "name_collision_with_existing",
+                    "message": "新名称与库内其他商品重名",
+                    "conflicts": [{"id": r["id"], "name": r["name"]} for r in clash_rows],
+                },
+            )
+
+    if dry_run:
+        conn.close()
+        return {
+            "dry_run": True,
+            "matched": matched,
+            "items": [dict(r) for r in rows],
+            "preview": preview,
+        }
+
+    # expected_count 双保险
+    if expected_count is not None and int(expected_count) != matched:
+        conn.close()
+        raise HTTPException(
+            409,
+            {
+                "error": "count_mismatch",
+                "message": f"匹配数 {matched} 与预期 {expected_count} 不一致，操作已中止",
+                "matched": matched,
+                "expected": int(expected_count),
+            },
+        )
+
+    # 执行批量更新（逐条 UPDATE，因为 name/price 可能逐行不同）
+    updated_ids = []
+    for p in preview:
+        sets, vals = [], []
+        a = p["after"]
+        if "name" in a:
+            sets.append("name=?"); vals.append(a["name"])
+        if "price" in a:
+            sets.append("price=?"); vals.append(a["price"])
+        if "category" in a:
+            sets.append("category=?"); vals.append(a["category"])
+        if not sets:
+            continue
+        sets.append("updated=datetime('now','localtime')")
+        vals.append(p["id"])
+        conn.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=?", vals)
+        updated_ids.append(p["id"])
+    conn.commit()
+
+    # TODO(audit): 此处可接入审计日志，记录 before/after/operator/timestamp
+    print(f"[bulk_update] filters={filters} update={update} updated_ids={updated_ids}")
+
+    if updated_ids:
+        id_placeholders = ",".join("?" * len(updated_ids))
+        new_rows = conn.execute(
+            f"SELECT * FROM products WHERE id IN ({id_placeholders}) ORDER BY id ASC",
+            updated_ids,
+        ).fetchall()
+        items = [dict(r) for r in new_rows]
+    else:
+        items = []
+    conn.close()
+    return {"dry_run": False, "updated": len(updated_ids), "items": items}
+
 
 @app.delete("/api/products/{pid}")
 def delete_product(pid: int):

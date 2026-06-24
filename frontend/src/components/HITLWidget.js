@@ -194,7 +194,7 @@ function ReadonlyField({ decision }) {
   return null;
 }
 
-function HITLWidget({ hitl, onAction, readonly, api, reply }) {
+function HITLWidget({ hitl, onAction, readonly, api, reply, prevFailed }) {
   const decisions = hitl?.checkpoint?.decisions || [];
   const apicall = hitl?.checkpoint?.apicall;
   const summary = hitl?.checkpoint?.summary || '';
@@ -381,11 +381,13 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
         firstDecision.type === 'confirm' ? (
           <div className="hitlw-actions">
             <button className="hitlw-btn default" onClick={() => onAction('cancel')}>取消</button>
-            <button className="hitlw-btn danger" onClick={() => onAction('confirm', apicall)}>确认</button>
+            {!prevFailed && (
+              <button className="hitlw-btn danger" onClick={() => onAction('confirm', apicall)}>确认</button>
+            )}
           </div>
         ) : (
           <div className="hitlw-actions">
-            {firstDecision.options?.map((opt, i) => (
+            {firstDecision.options?.filter(opt => !(prevFailed && ['approve', 'confirm', 'execute'].includes(opt.value))).map((opt, i) => (
               <button key={i}
                 className={`hitlw-btn ${opt.value === 'confirm' ? 'danger' : opt.value === '取消查询' || opt.value === 'cancel' ? 'default' : 'primary'}`}
                 onClick={() => onAction(opt.value, (opt.value === 'execute' || opt.value === 'confirm') ? apicall : null)}
@@ -393,6 +395,13 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
             ))}
           </div>
         )
+      )}
+
+      {/* 前置 apicall 失败时的提示 */}
+      {prevFailed && !readonly && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#e74c3c', opacity: 0.85 }}>
+          ⚠️ 上一步操作失败，已隐藏执行类按钮。请选择"调整条件"重新提需求，或取消。
+        </div>
       )}
     </div>
   );

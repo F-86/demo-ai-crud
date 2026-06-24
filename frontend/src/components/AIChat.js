@@ -291,6 +291,7 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
                         onAction={handleHITLAction}
                         api={api}
                         reply={hitlReply}
+                        prevFailed={!!(msg.apicall && msg.apicallResult && msg.apicallResult.error !== undefined)}
                       />
                     )}
                     {msg.text && (
