@@ -103,17 +103,20 @@ Phase 0  提取已明确的参数
    ├─ 明确说"查全部/所有商品/列出全部" → 直接输出 apicall，filters: {}
    └─ 其他一切情况 → 进入 Phase 1，输出 CP-1a
    ▼
-Phase 1  补全参数 & 直接执行
+Phase 1  补全参数
    ★ CP-1a — 展示全部 decision，已提取的参数用 default 预填
-   用户点击【提交】→ 前端汇总所有字段 → 直接执行 apicall
-   （无需 CP-1b 确认，简化流程）
+   用户点击【提交】→ 发消息给后端 → 进入 CP-1b
+   ▼
+Phase 2  确认 & 执行
+   ★ CP-1b — 展示已收集的条件（自然语言 + readonly 组件）+ hitl 确认块
+   hitl checkpoint 内嵌 `apicall`，用户点击【执行查询】→ 前端直接执行
 ```
 
 ### 关键规则
 
 - **禁止用 `input` 类型收集查询字段**——查询条件只用 `combobox` / `number_range` / `datetime_range`
 - **已提取的参数用 `default` 字段预填**，用户可修改或跳过
-- **CP-1a 提交后直接执行**，不经过二次确认（CP-1b 已移除）
+- **CP-1b hitl checkpoint 必须包含 `apicall`**——前端直接执行，无需再问 LLM
 - **只有用户明确说"查全部"才跳过 Phase 1**，其他情况一律展示 CP-1a
 
 ---
@@ -122,9 +125,11 @@ Phase 1  补全参数 & 直接执行
 
 | 类型 | 用途 | 示例 |
 |------|------|------|
-| `combobox` | 分类选择，前端拉取值 | `{"type": "combobox", "field": "category", "options_from": {"method": "GET", "endpoint": "/api/products/categories", ...}}` |
-| `number_range` | 价格范围 | `{"type": "number_range", "field": "price", "label": "价格区间", "unit": "元"}` |
-| `datetime_range` | 时间范围 | `{"type": "datetime_range", "field": "created", "label": "上架时间区间"}` |
+| `combobox` | 分类选择，前端拉取值 | CP-1a |
+| `number_range` | 价格范围 | CP-1a |
+| `datetime_range` | 时间范围 | CP-1a |
+| `readonly` | 只读展示已收集的值（可视化组件） | CP-1b，含 `field`/`label`/`value` |
+| `choice` | 执行/重填/取消 | CP-1b |
 
 ---
 
@@ -190,7 +195,59 @@ Phase 1  补全参数 & 直接执行
 
 ---
 
-## Phase 2 — 执行
+## ★ CP-1b — 条件确认
+
+CP-1a 提交后，用自然语言列出条件 + readonly 可视化组件 + hitl 确认块。**checkpoint 必须包含 `apicall`**。
+
+示例（价格 10-100）：
+
+```text
+请确认查询条件：
+
+```hitl
+{
+  "version": "1.0",
+  "checkpoint": {
+    "id": "cp-1b",
+    "name": "查询条件确认",
+    "phase": "Phase 2",
+    "summary": "已收集查询条件，请确认后执行查询",
+    "action": "wait",
+    "apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {"price": {"gte": 10, "lte": 100}}}},
+    "decisions": [
+      {
+        "id": "d-readonly",
+        "type": "readonly",
+        "field": "price",
+        "label": "价格区间",
+        "unit": "元",
+        "value": {"gte": 10, "lte": 100}
+      },
+      {
+        "id": "d-1",
+        "type": "choice",
+        "question": "是否确认以上查询条件？",
+        "options": [
+          {"value": "execute", "label": "✅ 执行查询"},
+          {"value": "重新填写查询条件", "label": "✏️ 重新填写"},
+          {"value": "取消查询", "label": "❌ 取消"}
+        ],
+        "default": "execute"
+      }
+    ]
+  }
+}
+```
+
+### 用户选择路由
+
+- `execute` → 前端直接用 checkpoint.apicall 执行，**不经过 LLM**
+- `重新填写查询条件` → 返回 CP-1a
+- `取消查询` → 结束
+
+---
+
+## Phase 3 — 执行（全量查询）
 
 当用户意图为全量查询时，直接输出 apicall 块：
 
