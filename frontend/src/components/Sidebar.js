@@ -183,7 +183,7 @@ function Sidebar({
                   <path d="M7 7.5v3M5.5 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
                 </svg>
               </button>
-              <button className="sidebar-new-btn" onClick={onCreate} title="新对话">
+              <button className="sidebar-new-btn" onClick={() => onCreate()} title="新对话">
                 <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                   <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                 </svg>

@@ -171,10 +171,31 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
 
   const copyMessage = (msg, i) => {
     const text = msg.text || '';
-    navigator.clipboard.writeText(text).then(() => {
+    const onSuccess = () => {
       setCopiedIdx(i);
       setTimeout(() => setCopiedIdx(null), 1500);
-    });
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+        fallbackCopy(text, onSuccess);
+      });
+    } else {
+      fallbackCopy(text, onSuccess);
+    }
+  };
+
+  const fallbackCopy = (text, onSuccess) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      onSuccess();
+    } catch (e) { /* ignore */ }
+    document.body.removeChild(ta);
   };
 
   const handleKeyDown = (e) => {

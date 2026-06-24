@@ -272,7 +272,7 @@ function App() {
             />
           ) : (
             <div className="chat-empty">
-              <button className="chat-empty-btn" onClick={handleCreate}>开始新对话</button>
+              <button className="chat-empty-btn" onClick={() => handleCreate()}>开始新对话</button>
             </div>
           )
         ) : (
