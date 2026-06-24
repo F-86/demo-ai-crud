@@ -33,7 +33,7 @@ metadata:
 |------|------|---------|
 | **CONTEXT** | 按需加载 | Phase 0 只读边界；Phase 1 加载参数清单 |
 | **TOOLS** | 输入/输出 | 用户自然语言输入；`hitl` 块收集结构化条件；`apicall` 块触发查询 |
-| **ORCHESTRATION** | 线性 Phase 管道 | Phase 0 → 1 → 2，全量查询可跳过 Phase 1 |
+| **ORCHESTRATION** | 线性 Phase 管道 | Phase 0 → 1 → 2，全量查询/确定性参数查询可跳过 CP-1a |
 | **MEMORY** | 无持久化 | 单次查询无需跨会话状态 |
 | **EVALUATION** | 参数校验 | 范围参数合法性（gte ≤ lte） |
 | **RECOVERY** | CP 重填 | CP-1b 提供"重新填写"选项，回到 CP-1a |
@@ -112,8 +112,8 @@ Phase 2  执行 & 展示
 | 条件 | 触发 HITL | 块类型 | 说明 |
 |------|----------|--------|------|
 | 用户意图为全量查询（明确说"查全部"/"所有商品"且无筛选词） | ❌ | — | 直接跳 Phase 2，输出 `filters: {}` |
-| **含确定性参数**（用户提供了具体的 id 或 name） | ✅ | choice | 跳过 CP-1a，直接输出 CP-1b 回显并确认 |
-| **其他条件查询**（含模糊表达如"帮我查一下"、category/price/时间等条件） | ✅ | 多 decision | 输出 CP-1a，让用户填写或跳过各筛选条件 |
+| **含确定性参数**（用户提供了具体的 id/name/price/created/updated 值） | ✅ | choice | 跳过 CP-1a，直接输出 CP-1b 回显并确认 |
+| **其他条件查询**（仅 category 或完全模糊） | ✅ | 多 decision | 输出 CP-1a，让用户填写或跳过各筛选条件 |
 | 用户已明确说"直接执行"/"不用确认" | ❌ | — | 跳过 CP-1b，直接输出 apicall |
 
 > **铁律 1：禁止在 Phase 0 用自然语言提问意图**（如"你想按什么条件查？"）。意图不明时直接输出 CP-1a。
@@ -137,17 +137,19 @@ Phase 2  执行 & 展示
 | 用户意图 | 判断标准 | 动作 |
 |---------|---------|------|
 | **明确全量查询** | 说了"查全部"、"所有商品"、"列出全部"且无任何筛选词 | 直接跳到 Phase 2，输出 `filters: {}` 的 apicall |
-| **含确定性参数** | 用户提供了具体的 id 或 name，如"查 iPhone 15"、"找 MacBook Pro"、"查 id=3 的商品" | 从输入中提取 id/name，直接跳 CP-1b 回显确认（跳过 CP-1a） |
-| **其他条件查询** | 涉及 category/price/时间等非确定性条件，或完全模糊如"帮我查一下" | 进入 Phase 1，输出 CP-1a HITL 块 |
+| **含确定性参数** | 用户提供了具体的筛选值，如"查 MacBook Pro"、"价格在10～100"、"2024年上架的"、"id=3" | 从输入中提取所有可确定的值，直接跳 CP-1b 回显确认（跳过 CP-1a） |
+| **其他条件查询** | 仅涉及 category（需 combobox 选择）或完全模糊如"帮我查一下"、"便宜的" | 进入 Phase 1，输出 CP-1a HITL 块 |
 
 **禁止在 Phase 0 输出任何文字提问**。意图不明时默认进入 Phase 1，所有 decision 均非必填，全部跳过等同于查全部。
 
 ### 含确定性参数时的处理
 
-当用户提供了明确的 id 或 name，agent 应当：
-1. 从输入中提取 `id`（多个逗号分隔时拆为数组）或 `name`（字符串）
-2. 直接输出 CP-1b，在 `summary` 中回显已提取的条件（如"将按 商品名称='MacBook Pro' 查询"）
+当用户提供了明确的筛选值，agent 应当：
+1. 从输入中提取所有可确定的参数：`id`、`name`、`price`（gte/lte）、`created`（gte/lte）、`updated`（gte/lte）
+2. 直接输出 CP-1b，在 `summary` 中回显已提取的条件（如"将按 价格≥10且≤100 查询"）
 3. 用户确认 `execute` 后进入 Phase 2 输出 apicall
+
+> **注意**：`category` 不是确定性参数，即使 LLM 能猜出"吃的→食品"，也必须通过 combobox 让用户选择，不允许自动映射。
 
 ---
 
@@ -157,14 +159,16 @@ Phase 2  执行 & 展示
 
 | 参数 | 必填 | decision 类型 | 说明 |
 |------|------|--------------|------|
-| `id` | 否 | 确定性参数，LLM 直接提取，不触发 HITL | 商品 ID，精确查询，多个逗号分隔 |
-| `name` | 否 | 确定性参数，LLM 直接提取，不触发 HITL | 商品名称，模糊查询 |
+| `id` | 否 | 确定性参数 | 商品 ID，精确查询，多个逗号分隔 |
+| `name` | 否 | 确定性参数 | 商品名称，模糊查询 |
 | `category` | 否 | `combobox`（`GET /api/products/categories`） | 商品分类，支持多选 |
-| `price` | 否 | `number_range`（单位：元） | 价格区间，gte=下限，lte=上限 |
-| `created` | 否 | `datetime_range` | 上架时间区间 |
-| `updated` | 否 | `datetime_range` | 更新时间区间 |
+| `price` | 否 | 确定性参数（给出具体数值时）/ `number_range`（模糊时） | 价格区间，gte=下限，lte=上限 |
+| `created` | 否 | 确定性参数（给出具体日期时）/ `datetime_range`（模糊时） | 上架时间区间 |
+| `updated` | 否 | 确定性参数（给出具体日期时）/ `datetime_range`（模糊时） | 更新时间区间 |
 
-`id` / `name` 为确定性参数，LLM 从用户输入中直接提取，不触发 HITL；提取到的值预填入 filters，未提及则不放入 filters。
+**确定性参数**：`id` / `name` / `price` / `created` / `updated`。当用户**明确给出具体值或范围**（如"价格在10～100"、"2024年上架的"）时，LLM 直接提取数值，不触发 HITL，跳过 CP-1a 直接 CP-1b 确认。
+
+**非确定性参数**：`category` 必须通过 `combobox` 让用户从后端拉取的枚举中选择，不能由 LLM 猜测（如"吃的"不能自动映射为"食品"）。
 
 ### 执行逻辑
 
@@ -330,9 +334,9 @@ Phase 2  执行 & 展示
 ## Common Pitfalls
 
 1. **Phase 0 用自然语言反问意图**：严禁输出"你是想查全部还是按条件？"等提问，意图不明时直接输出 CP-1a。
-2. **含 name/id 的查询仍触发 CP-1a**：用户说"查 MacBook Pro"时，id/name 是确定性参数，LLM 应直接提取后跳 CP-1b，禁止走 CP-1a 空表单。
+2. **含 name/id/price/created/updated 的查询仍触发 CP-1a**：用户说"查 MacBook Pro"、"价格在10～100"时，这些参数能直接提取，LLM 应直接跳 CP-1b，禁止走 CP-1a 空表单。
 3. **查询字段用 `input` 类型**：`input` 仅限 Create/Update 填写新数据，查询条件必须用 `combobox`/`number_range`/`datetime_range`。
-4. **category 枚举硬编码在 decision 里**：应通过 `combobox` 的 `options_from` 让前端动态拉取，不要在 SKILL.md 里写死枚举值。
+4. **category 枚举硬编码或 LLM 自动猜测**：`category` 必须通过 `combobox` 的 `options_from` 让前端动态拉取，禁止 LLM 将"吃的"自动映射为"食品"。
 5. **全量查询也触发 HITL**：用户说"查全部商品"时，直接输出 `filters: {}` 的 apicall。
 6. **CP-1b 之前就输出 apicall**：apicall 必须在 CP-1b 用户选择 `execute` 之后输出。
 7. **filters 包含空字段**：用户未填写的字段不能出现在 `filters` 对象中。
