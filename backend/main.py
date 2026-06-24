@@ -177,22 +177,82 @@ def delete_product(pid: int):
     conn.close()
     return {"ok": True, "deleted_id": pid}
 
+# ─── Chat Groups ───────────────────────────────────────────
+
+@app.get("/api/chat/groups")
+def list_groups():
+    conn = db()
+    rows = conn.execute(
+        "SELECT id, name, created, updated FROM chat_groups ORDER BY id ASC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/chat/groups")
+def create_group(body: dict = None):
+    name = "新分组"
+    if body and body.get("name"):
+        name = body["name"].strip() or "新分组"
+    conn = db()
+    cur = conn.execute("INSERT INTO chat_groups (name) VALUES (?)", (name,))
+    conn.commit()
+    row = conn.execute("SELECT * FROM chat_groups WHERE id=?", (cur.lastrowid,)).fetchone()
+    conn.close()
+    return dict(row)
+
+@app.patch("/api/chat/groups/{gid}")
+def rename_group(gid: int, body: dict):
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "分组名不能为空")
+    conn = db()
+    conn.execute(
+        "UPDATE chat_groups SET name=?, updated=datetime('now','localtime') WHERE id=?",
+        (name, gid)
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM chat_groups WHERE id=?", (gid,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "分组不存在")
+    return dict(row)
+
+@app.delete("/api/chat/groups/{gid}")
+def delete_group(gid: int):
+    conn = db()
+    row = conn.execute("SELECT id FROM chat_groups WHERE id=?", (gid,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "分组不存在")
+    # 删除分组后，该分组下的会话 group_id 自动置空 (ON DELETE SET NULL)
+    conn.execute("DELETE FROM chat_groups WHERE id=?", (gid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
 # ─── Chat Sessions ─────────────────────────────────────────
 
 @app.get("/api/chat/sessions")
 def list_sessions():
     conn = db()
     rows = conn.execute(
-        "SELECT id, title, created, updated FROM chat_sessions ORDER BY updated DESC"
+        "SELECT id, title, group_id, created, updated FROM chat_sessions ORDER BY updated DESC"
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 @app.post("/api/chat/sessions")
-def create_session():
+def create_session(body: dict = None):
     conn = db()
+    group_id = None
+    if body and body.get("group_id") is not None:
+        group_id = body["group_id"]
+        g = conn.execute("SELECT id FROM chat_groups WHERE id=?", (group_id,)).fetchone()
+        if not g:
+            conn.close()
+            raise HTTPException(400, "分组不存在")
     cur = conn.execute(
-        "INSERT INTO chat_sessions (title) VALUES (?)", ("新对话",)
+        "INSERT INTO chat_sessions (title, group_id) VALUES (?, ?)", ("新对话", group_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -201,19 +261,39 @@ def create_session():
 
 @app.patch("/api/chat/sessions/{sid}")
 def rename_session(sid: int, body: dict):
-    title = body.get("title", "").strip()
-    if not title:
-        raise HTTPException(400, "标题不能为空")
     conn = db()
-    conn.execute(
-        "UPDATE chat_sessions SET title=?, updated=datetime('now','localtime') WHERE id=?",
-        (title, sid)
-    )
-    conn.commit()
+    row = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (sid,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "会话不存在")
+
+    sets = []
+    vals = []
+    title = body.get("title")
+    if title is not None:
+        title = title.strip()
+        if not title:
+            conn.close()
+            raise HTTPException(400, "标题不能为空")
+        sets.append("title=?")
+        vals.append(title)
+    # 支持移动会话到分组（group_id 可为 null 表示移出分组）
+    if "group_id" in body:
+        gid = body["group_id"]
+        if gid is not None:
+            g = conn.execute("SELECT id FROM chat_groups WHERE id=?", (gid,)).fetchone()
+            if not g:
+                conn.close()
+                raise HTTPException(400, "分组不存在")
+        sets.append("group_id=?")
+        vals.append(gid)
+    if sets:
+        sets.append("updated=datetime('now','localtime')")
+        vals.append(sid)
+        conn.execute(f"UPDATE chat_sessions SET {', '.join(sets)} WHERE id=?", vals)
+        conn.commit()
     row = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (sid,)).fetchone()
     conn.close()
-    if not row:
-        raise HTTPException(404, "会话不存在")
     return dict(row)
 
 @app.delete("/api/chat/sessions/{sid}")

@@ -13,6 +13,14 @@ def get_connection():
 def init_db():
     conn = get_connection()
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_groups (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            name    TEXT NOT NULL DEFAULT '新分组',
+            created TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS chat_sessions (
             id      INTEGER PRIMARY KEY AUTOINCREMENT,
             title   TEXT NOT NULL DEFAULT '新对话',
@@ -20,6 +28,14 @@ def init_db():
             updated TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         )
     """)
+    # 迁移：为 chat_sessions 增加 group_id 列
+    sess_cols = [r[1] for r in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()]
+    if "group_id" not in sess_cols:
+        conn.execute(
+            "ALTER TABLE chat_sessions ADD COLUMN group_id INTEGER "
+            "REFERENCES chat_groups(id) ON DELETE SET NULL"
+        )
+        conn.commit()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chat_messages (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
