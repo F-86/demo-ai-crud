@@ -22,14 +22,14 @@ license: MIT
 
 ### 字段定义
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | `number[]` | 商品 ID 精确匹配，如 `[1, 3, 5]` |
-| `name` | `string` | 商品名称模糊匹配，如 `"MacBook Pro"` |
-| `category` | `string[]` | 分类精确匹配，枚举值由 `GET /api/products/categories` 返回，如 `["数码", "玩具"]` |
-| `price` | `{gte?, lte?}` | 价格区间（元），如 `{"gte": 10, "lte": 100}` 或只填一端 `{"lte": 500}` |
-| `created` | `{gte?, lte?}` | 上架时间区间，如 `{"gte": "2024-01-01", "lte": "2024-12-31"}` |
-| `updated` | `{gte?, lte?}` | 更新时间区间，格式同上 |
+| 字段 | 类型 | 收集方式 | 说明 |
+|------|------|----------|------|
+| `id` | `number[]` | **直接从用户输入提取，不在 CP-1a 中展示** | 商品 ID 精确匹配，如 `[1, 3, 5]` |
+| `name` | `string` | 直接从用户输入提取，不在 CP-1a 中展示 | 商品名称模糊匹配，如 `"MacBook Pro"` |
+| `category` | `string[]` | CP-1a `combobox` | 分类精确匹配，枚举值由 `GET /api/products/categories` 返回 |
+| `price` | `{gte?, lte?}` | CP-1a `number_range` | 价格区间（元） |
+| `created` | `{gte?, lte?}` | CP-1a `datetime_range` | 上架时间区间 |
+| `updated` | `{gte?, lte?}` | CP-1a `datetime_range` | 更新时间区间 |
 
 ### filters 示例
 
@@ -80,9 +80,10 @@ license: MIT
 ### 提取原则
 
 1. **能确定的就直接提取**——数值、名称、日期等明确信息，直接填入对应 decision 的 `default` 值
-2. **category 必须通过 combobox 让用户选择**——枚举值来自后端 `GET /api/products/categories`，不可自行猜测映射（"吃的"→"食品"不行）
-3. **拿不准的不猜**——模糊表述如"便宜的"、"最近的"不要假设数值，留给用户填写
-4. **CP-1a 展示全部查询参数**——已提取的用 `default` 预填，未提取的留空，让用户在**同一个表单内**一次性补全或跳过
+2. **`id` 和 `name` 只从用户输入提取，不放进 CP-1a 表单**——用户说"查 id 为 1、3、5 的"，直接提取 `id:[1,3,5]` 放入 apicall filters；说"查 MacBook Pro"，直接提取 `name:"MacBook Pro"`。**禁止用 `input` 类型在 CP-1a 中让用户再次输入 id 或 name。**
+3. **category 必须通过 combobox 让用户选择**——枚举值来自后端 `GET /api/products/categories`，不可自行猜测映射（"吃的"→"食品"不行）
+4. **拿不准的不猜**——模糊表述如"便宜的"、"最近的"不要假设数值，留给用户填写
+5. **CP-1a 只展示 category / price / created / updated 四个表单字段**——`id` 和 `name` 已从输入提取，不出现在 CP-1a decisions 中
 
 ### 时间表达式解析规则
 
@@ -105,7 +106,9 @@ license: MIT
 | 用户输入 | 行为 |
 |---------|------|
 | "列出所有商品" | `{}` → 直接输出 apicall（明确全量查询） |
-| "查 MacBook Pro" | 提取 name="MacBook Pro" 作为 default，但仍输出 CP-1a 展示所有字段让用户补充 |
+| "查 MacBook Pro" | 提取 name="MacBook Pro"，apicall filters 直接带上，仍输出 CP-1a（不含 name 字段）让用户补充其他条件 |
+| "帮我查 id" / "查商品 id" | 用户没给具体 id 值，输出 CP-1a（不含 id 字段），让用户先填其他条件 |
+| "查 id 为 1、3、5 的" | 提取 id=[1,3,5]，仍输出 CP-1a（不含 id 字段）让用户补充其他条件 |
 | "价格在 10～100 的商品" | 提取 price={gte:10, lte:100} 作为 default，仍输出 CP-1a |
 | "帮我查一下商品" | 无任何可提取的，输出 CP-1a 全部为空 |
 | "查一下数码分类的" | 输出 CP-1a，category 预填为 default（通过 combobox `default` 字段标记） |
@@ -229,10 +232,11 @@ CP-1a — 一次性收集
 
 ## 常见错误
 
-1. **用 `input` 收集查询字段** → 查询只用 combobox / number_range / datetime_range
-2. **非"查全部"时跳过 CP-1a** → 除非明确说"查全部/所有商品"，否则必须走 CP-1a
-3. **category 猜值映射** → 必须 combobox，禁止"吃的→食品"
-4. **模糊表述自设数值** → "便宜的"、"最近的"不猜，展示空 decision 让用户填
-5. **已提取的参数忘记设 default** → 用 `default` 字段预填，用户可跳过或修改
-6. **CP-1a 出现两次** → 一轮查询只允许一次 CP-1a。**反例**：用户说"价格 10~100"，先出一次 CP-1a 预填价格，又出一次 CP-1a 写 summary"价格已设置，请补充其他条件"。正确做法：第一次 CP-1a 就要把价格 default 预填好同时展示其他字段，用户在同一个表单内一次性补全。
-7. **CP-1a 缺少 `apicall` 模板** → checkpoint 必须带 `"apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}}`，前端提交时注入 filters 直接执行
+1. **用 `input` 收集查询字段** → 查询只用 combobox / number_range / datetime_range；`id` 和 `name` 直接从用户输入提取，不放进 CP-1a 表单
+2. **在 CP-1a 中用 `input` 让用户输入 id** → 错误。用户说"帮我查 id"时，直接从输入提取 id 值；若用户没给具体值，输出 CP-1a（不含 id decision）让用户补充其他条件
+3. **非"查全部"时跳过 CP-1a** → 除非明确说"查全部/所有商品"，否则必须走 CP-1a
+4. **category 猜值映射** → 必须 combobox，禁止"吃的→食品"
+5. **模糊表述自设数值** → "便宜的"、"最近的"不猜，展示空 decision 让用户填
+6. **已提取的参数忘记设 default** → 用 `default` 字段预填，用户可跳过或修改
+7. **CP-1a 出现两次** → 一轮查询只允许一次 CP-1a
+8. **CP-1a 缺少 `apicall` 模板** → checkpoint 必须带 `"apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}}`

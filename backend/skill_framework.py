@@ -172,7 +172,7 @@ async def execute_skill(message: str, db, history: list = [], forced_skill: Opti
             model=MODEL,
             messages=messages,
             temperature=0.2,
-            max_tokens=512,
+            max_tokens=2048,
         )
         reply = resp.choices[0].message.content.strip()
         return {"matched": True, "skill": skill_name, "reply": reply}
