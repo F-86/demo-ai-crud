@@ -85,9 +85,10 @@ apicall 协议完整规范见 `references/hitl-protocol.md` apicall 章节。
 
 ```
 Phase 0  Intake
-         从用户输入判断是全量查询还是条件查询
-         ├─ 全量查询 ──────────────────────────→ Phase 2（跳过 Phase 1）
-         └─ 其他一切查询意图 → Phase 1
+         从用户输入判断查询模式
+         ├─ 全量查询 ──────────────────────────────────→ Phase 2（跳过 Phase 1）
+         ├─ 含确定性参数（id/name）─────────────────→ CP-1b（跳过 CP-1a）
+         └─ 其他条件查询意图（category/price/时间等）→ Phase 1
               ▼
 Phase 1  条件收集
          ★ CP-1a — 多 decision 块，各字段独立展示
@@ -111,7 +112,8 @@ Phase 2  执行 & 展示
 | 条件 | 触发 HITL | 块类型 | 说明 |
 |------|----------|--------|------|
 | 用户意图为全量查询（明确说"查全部"/"所有商品"且无筛选词） | ❌ | — | 直接跳 Phase 2，输出 `filters: {}` |
-| **其他一切查询意图**（含模糊表达如"帮我查一下"） | ✅ | 多 decision | 直接输出 CP-1a，让用户填写或跳过各筛选条件 |
+| **含确定性参数**（用户提供了具体的 id 或 name） | ✅ | choice | 跳过 CP-1a，直接输出 CP-1b 回显并确认 |
+| **其他条件查询**（含模糊表达如"帮我查一下"、category/price/时间等条件） | ✅ | 多 decision | 输出 CP-1a，让用户填写或跳过各筛选条件 |
 | 用户已明确说"直接执行"/"不用确认" | ❌ | — | 跳过 CP-1b，直接输出 apicall |
 
 > **铁律 1：禁止在 Phase 0 用自然语言提问意图**（如"你想按什么条件查？"）。意图不明时直接输出 CP-1a。
@@ -130,14 +132,22 @@ Phase 2  执行 & 展示
 
 ### 判断查询模式
 
-从用户输入中判断，**只有两种路径，没有第三条**：
+从用户输入中判断，**三种路径任选其一**：
 
 | 用户意图 | 判断标准 | 动作 |
 |---------|---------|------|
 | **明确全量查询** | 说了"查全部"、"所有商品"、"列出全部"且无任何筛选词 | 直接跳到 Phase 2，输出 `filters: {}` 的 apicall |
-| **其他一切情况** | 包括"帮我查一下"、"找找商品"、"查个商品"等模糊表达 | 直接进入 Phase 1，输出 CP-1a HITL 块 |
+| **含确定性参数** | 用户提供了具体的 id 或 name，如"查 iPhone 15"、"找 MacBook Pro"、"查 id=3 的商品" | 从输入中提取 id/name，直接跳 CP-1b 回显确认（跳过 CP-1a） |
+| **其他条件查询** | 涉及 category/price/时间等非确定性条件，或完全模糊如"帮我查一下" | 进入 Phase 1，输出 CP-1a HITL 块 |
 
 **禁止在 Phase 0 输出任何文字提问**。意图不明时默认进入 Phase 1，所有 decision 均非必填，全部跳过等同于查全部。
+
+### 含确定性参数时的处理
+
+当用户提供了明确的 id 或 name，agent 应当：
+1. 从输入中提取 `id`（多个逗号分隔时拆为数组）或 `name`（字符串）
+2. 直接输出 CP-1b，在 `summary` 中回显已提取的条件（如"将按 商品名称='MacBook Pro' 查询"）
+3. 用户确认 `execute` 后进入 Phase 2 输出 apicall
 
 ---
 
@@ -320,21 +330,23 @@ Phase 2  执行 & 展示
 ## Common Pitfalls
 
 1. **Phase 0 用自然语言反问意图**：严禁输出"你是想查全部还是按条件？"等提问，意图不明时直接输出 CP-1a。
-2. **查询字段用 `input` 类型**：`input` 仅限 Create/Update 填写新数据，查询条件必须用 `combobox`/`number_range`/`datetime_range`。
-3. **category 枚举硬编码在 decision 里**：应通过 `combobox` 的 `options_from` 让前端动态拉取，不要在 SKILL.md 里写死枚举值。
-4. **全量查询也触发 HITL**：用户说"查全部商品"时，直接输出 `filters: {}` 的 apicall。
-5. **CP-1b 之前就输出 apicall**：apicall 必须在 CP-1b 用户选择 `execute` 之后输出。
-6. **filters 包含空字段**：用户未填写的字段不能出现在 `filters` 对象中。
-7. **范围参数校验遗漏**：`price.gte > price.lte` 等非法范围应在 Phase 1 检测后返回 CP-1a。
-8. **范围字段格式错误**：`price`/`created`/`updated` 必须序列化为 `{"gte": x, "lte": y}` 格式。
-9. **`name` 字段模糊查询变精确匹配**：后端应使用 `LIKE %name%`。
+2. **含 name/id 的查询仍触发 CP-1a**：用户说"查 MacBook Pro"时，id/name 是确定性参数，LLM 应直接提取后跳 CP-1b，禁止走 CP-1a 空表单。
+3. **查询字段用 `input` 类型**：`input` 仅限 Create/Update 填写新数据，查询条件必须用 `combobox`/`number_range`/`datetime_range`。
+4. **category 枚举硬编码在 decision 里**：应通过 `combobox` 的 `options_from` 让前端动态拉取，不要在 SKILL.md 里写死枚举值。
+5. **全量查询也触发 HITL**：用户说"查全部商品"时，直接输出 `filters: {}` 的 apicall。
+6. **CP-1b 之前就输出 apicall**：apicall 必须在 CP-1b 用户选择 `execute` 之后输出。
+7. **filters 包含空字段**：用户未填写的字段不能出现在 `filters` 对象中。
+8. **范围参数校验遗漏**：`price.gte > price.lte` 等非法范围应在 Phase 1 检测后返回 CP-1a。
+9. **范围字段格式错误**：`price`/`created`/`updated` 必须序列化为 `{"gte": x, "lte": y}` 格式。
+10. **`name` 字段模糊查询变精确匹配**：后端应使用 `LIKE %name%`。
 
 ---
 
 ## Verification Checklist
 
-- [ ] Phase 0 正确区分全量查询与条件查询，无自然语言反问
+- [ ] Phase 0 正确区分全量查询、确定性参数查询、条件查询，无自然语言反问
 - [ ] 全量查询直接输出 apicall，未触发任何 HITL
+- [ ] 含 name/id 的查询跳过 CP-1a，直接输出 CP-1b 回显条件
 - [ ] CP-1a 使用 `combobox`/`number_range`/`datetime_range` decision，**未使用 `input`**
 - [ ] CP-1a 的 `combobox` decision 含 `field`、`options_from.endpoint`、`label_field`、`value_field`
 - [ ] CP-1a 的 `number_range` decision 含 `field`、`label`、`unit`

@@ -69,7 +69,7 @@ def query_products(body: dict):
         params.extend(filters["id"])
     if filters.get("name"):
         query += " AND name LIKE ?"
-        params.append(f"%{filters['name'][0]}%")
+        params.append(f"%{filters['name']}%")
     if filters.get("category"):
         placeholders = ",".join("?" * len(filters["category"]))
         query += f" AND category IN ({placeholders})"
