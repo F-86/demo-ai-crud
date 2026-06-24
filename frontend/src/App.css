@@ -573,7 +573,19 @@ body {
 }
 .hitlw-tag:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
 .hitlw-tag--active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.hitlw-tag--readonly { cursor: default; background: var(--surface); color: var(--text); opacity: 0.9; }
 .hitlw-tag:disabled { opacity: 0.5; cursor: default; }
+.hitlw-readonly-fields { margin: 4px 0 8px; display: flex; flex-direction: column; gap: 4px; }
+.hitlw-readonly-box {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 64px; padding: 6px 12px; border-radius: 6px;
+  background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500;
+  border: 1px solid var(--border);
+}
+.hitlw-readonly-text {
+  padding: 8px 12px; border-radius: 6px; background: var(--surface);
+  color: var(--text); font-size: 13px; border: 1px solid var(--border);
+}
 .hitlw-dim { font-size: 12px; color: var(--text-dim); }
 .hitlw-reply {
   display: flex;

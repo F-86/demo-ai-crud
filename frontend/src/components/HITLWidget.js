@@ -132,6 +132,51 @@ function DecisionWidget({ decision, values, setValues, readonly, api }) {
   return null;
 }
 
+// 渲染只读字段（可视化展示已收集的值）
+function ReadonlyField({ decision }) {
+  const { field, label, unit, value } = decision;
+
+  // number_range：只读的价格区间
+  if (value && typeof value === 'object' && !Array.isArray(value) && ('gte' in value || 'lte' in value)) {
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{label}{unit ? `（${unit}）` : ''}</span>
+        <div className="hitlw-range">
+          <div className="hitlw-readonly-box">{value.gte != null ? value.gte : '不限'}</div>
+          <span className="hitlw-range-sep">—</span>
+          <div className="hitlw-readonly-box">{value.lte != null ? value.lte : '不限'}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 数组：只读标签（如 category、id）
+  if (Array.isArray(value)) {
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{label}</span>
+        <div className="hitlw-tags">
+          {value.map((v, i) => (
+            <span key={i} className="hitlw-tag hitlw-tag--readonly">{v}</span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // 字符串/数字：简单只读字段
+  if (value != null) {
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{label}</span>
+        <div className="hitlw-readonly-text">{String(value)}</div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function HITLWidget({ hitl, onAction, readonly, api, reply }) {
   const decisions = hitl?.checkpoint?.decisions || [];
   const apicall = hitl?.checkpoint?.apicall;
@@ -160,9 +205,14 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
 
   if (!decisions.length) return null;
 
-  const firstDecision = decisions[0];
-  const isChoiceOnly = decisions.length === 1 && (firstDecision.type === 'choice' || firstDecision.type === 'confirm');
-  const isMultiDecision = decisions.some(d => ['combobox', 'number_range', 'datetime_range', 'input'].includes(d.type));
+  // 区分 readonly 展示和可交互决策
+  const readonlyDecisions = decisions.filter(d => d.type === 'readonly');
+  const actionableDecisions = decisions.filter(d => d.type !== 'readonly');
+  const hasReadonly = readonlyDecisions.length > 0;
+
+  const firstDecision = actionableDecisions[0] || decisions[0];
+  const isChoiceOnly = actionableDecisions.length === 1 && (firstDecision.type === 'choice' || firstDecision.type === 'confirm');
+  const isMultiDecision = actionableDecisions.some(d => ['combobox', 'number_range', 'datetime_range', 'input'].includes(d.type));
 
   const isDecisionFilled = (d) => {
     const f = d.field || d.name;
@@ -213,6 +263,15 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
         <span className="hitlw-summary">{summary}</span>
         {readonly && <span className="hitlw-badge">已处理</span>}
       </div>
+
+      {/* readonly 字段：可视化展示已收集的值（如价格区间框、分类标签等） */}
+      {hasReadonly && (
+        <div className="hitlw-readonly-fields">
+          {readonlyDecisions.map((d, i) => (
+            <ReadonlyField key={i} decision={d} />
+          ))}
+        </div>
+      )}
 
       {/* 多 decision 轮播（combobox / number_range / datetime_range） */}
       {isMultiDecision && (

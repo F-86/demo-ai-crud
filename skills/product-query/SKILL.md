@@ -189,13 +189,15 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 ## ★ CP-1b — 条件确认
 
 输出格式（严格按此顺序）：
-1. 自然语言条件摘要 + 问句
-2. ```hitl 确认块，**checkpoint 中必须包含 `apicall` 字段**（前端点"执行查询"时直接执行，无需再问 LLM）
+1. 一句自然语言引导（如"请确认以下查询条件："）
+2. ```hitl 确认块，包含 `readonly` decision 展示已收集的值 + `choice` decision 让用户确认
+
+> **关键**：`readonly` decision 用可视化组件（number_range / datetime_range / combobox_tags）展示已提取的参数值，`choice` decision 放最后让用户选择操作。
 
 示例（用户输入"价格 10-100"，提取后）：
 
 ```text
-将按 价格≥10元且≤100元 查询商品，确认吗？
+请确认以下查询条件：
 
 ```hitl
 {
@@ -204,10 +206,18 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
     "id": "cp-1b",
     "name": "查询条件确认",
     "phase": "Phase 1",
-    "summary": "已收集查询条件：价格≥10元且≤100元，请确认后执行查询",
+    "summary": "已收集查询条件，请确认后执行查询",
     "action": "wait",
     "apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {"price": {"gte": 10, "lte": 100}}}},
     "decisions": [
+      {
+        "id": "d-readonly-price",
+        "type": "readonly",
+        "field": "price",
+        "label": "价格区间",
+        "unit": "元",
+        "value": {"gte": 10, "lte": 100}
+      },
       {
         "id": "d-1",
         "type": "choice",
@@ -223,6 +233,18 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
   }
 }
 ```
+
+### readonly decision 规范
+
+| 字段 | 说明 |
+|------|------|
+| `type` | `"readonly"` |
+| `field` | 字段名（price / created / updated / category / name / id） |
+| `label` | 显示标签 |
+| `unit` | 单位（price 用） |
+| `value` | 已收集的值：数值范围用 `{"gte": x, "lte": y}`，分类用 `["数码", "玩具"]`，name/id 用字符串/数组 |
+
+前端根据 `field` 和 `value` 类型渲染对应的只读组件（number_range 框、日期区间、标签列表等）。
 
 ### 用户选择路由
 
