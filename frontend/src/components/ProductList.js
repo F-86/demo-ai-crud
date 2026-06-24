@@ -122,8 +122,8 @@ function ProductList({ api }) {
       <form className="search-bar" onSubmit={handleSearch}>
         {renderSearchField('ID', 'id', 'number')}
         {renderSearchField('名称', 'name')}
-        {renderSearchField('最低价', 'price_min', 'number')}
-        {renderSearchField('最高价', 'price_max', 'number')}
+        {renderSearchField('最低价(¥)', 'price_min', 'number')}
+        {renderSearchField('最高价(¥)', 'price_max', 'number')}
         {renderSearchField('分类', 'category', 'text', CATEGORIES)}
         {renderSearchField('上架起始', 'created_after', 'date')}
         {renderSearchField('上架截止', 'created_before', 'date')}
@@ -149,7 +149,7 @@ function ProductList({ api }) {
               <tr>
                 <td style={{ color: '#888' }}>新增</td>
                 <td><input value={newFormData.name} onChange={e => setNewFormData({ ...newFormData, name: e.target.value })} placeholder="名称" /></td>
-                <td><input type="number" step="0.01" value={newFormData.price} onChange={e => setNewFormData({ ...newFormData, price: e.target.value })} placeholder="价格" /></td>
+                <td><input type="number" step="0.01" value={newFormData.price} onChange={e => setNewFormData({ ...newFormData, price: e.target.value })} placeholder="价格(¥)" /></td>
                 <td>
                   <select value={newFormData.category} onChange={e => setNewFormData({ ...newFormData, category: e.target.value })}>
                     {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
