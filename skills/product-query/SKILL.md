@@ -71,26 +71,26 @@ license: MIT
 
 你（LLM）每次收到用户消息时，判断能从消息中提取出哪些查询参数。
 
+### 核心规则（最高优先级）
+
+**只有用户明确说"查全部/所有商品/列出全部"时才跳过表单直接执行。其他一切情况，即使你已经提取到了部分参数，也必须输出 CP-1a 询问用户剩余条件怎么填。** 用户跳过所有 decision 再提交，才是真正的全量查询。
+
 ### 提取原则
 
-1. **能确定的就直接提取**——数值、名称、日期等明确信息，直接填入 filters
-2. **category 需要用户确认**——枚举值来自后端 `GET /api/products/categories`，不可自行猜测映射（"吃的"→"食品"不行）
+1. **能确定的就直接提取**——数值、名称、日期等明确信息，直接填入对应 decision 的 `default` 值
+2. **category 必须通过 combobox 让用户选择**——枚举值来自后端 `GET /api/products/categories`，不可自行猜测映射（"吃的"→"食品"不行）
 3. **拿不准的不猜**——模糊表述如"便宜的"、"最近的"不要假设数值，留给用户填写
-4. **已提取的不重复问**，只对缺失的参数展示 decision
+4. **总是展示所有查询参数的 decision**——即使用户已提供了部分参数（如名称），也展示 CP-1a 列出全部可选字段，让用户补全或直接提交
 
 ### 识别示例
 
-| 用户输入 | 可直接提取的 filters |
-|---------|---------------------|
-| "查 MacBook Pro" | `{"name": "MacBook Pro"}` |
-| "价格在 10～100 的商品" | `{"price": {"gte": 10, "lte": 100}}` |
-| "100 块以下的" | `{"price": {"lte": 100}}` |
-| "2024 年上架的" | `{"created": {"gte": "2024-01-01", "lte": "2024-12-31"}}` |
-| "找一下 id 3 和 5" | `{"id": [3, 5]}` |
-| "2024 年上架的数码产品，5000 以内" | `{"created": {"gte": "2024-01-01", "lte": "2024-12-31"}, "price": {"lte": 5000}}` → category 缺失，需 combobox |
-| "查一下数码分类的" | → category 需 combobox 选择（后端拉枚举） |
-| "帮我查一下商品" | → 没有任何可提取的，展示全部 decision |
-| "列出所有商品" | `{}` → 直接输出 apicall |
+| 用户输入 | 行为 |
+|---------|------|
+| "列出所有商品" | `{}` → 直接输出 apicall（明确全量查询） |
+| "查 MacBook Pro" | 提取 name="MacBook Pro" 作为 default，但仍输出 CP-1a 展示所有字段让用户补充 |
+| "价格在 10～100 的商品" | 提取 price={gte:10, lte:100} 作为 default，仍输出 CP-1a |
+| "帮我查一下商品" | 无任何可提取的，输出 CP-1a 全部为空 |
+| "查一下数码分类的" | 输出 CP-1a，category 预填为 default（通过 combobox `default` 字段标记） |
 
 ---
 
@@ -99,22 +99,23 @@ license: MIT
 ```
 用户输入
    ▼
-Phase 0  提取已明确的参数，构建 filters 草图
-   ├─ 所有参数都齐了 → 跳 Phase 2 直接输出 apicall
-   ├─ 只有 category 缺失或有模糊参数 → 跳 Phase 1，展示缺失字段的 decision
-   └─ 全量查询 → 跳 Phase 2，filters: {}
+Phase 0  提取已明确的参数
+   ├─ 明确说"查全部/所有商品/列出全部" → 跳 Phase 2，filters: {}
+   └─ 其他一切情况 → 进入 Phase 1，输出 CP-1a
    ▼
 Phase 1  补全缺失参数
-   ★ CP-1a — 只展示还没拿到的字段（用 combobox / number_range / datetime_range）
-   ★ CP-1b — 用自然语言列出条件 + 输出 ```filters 块 + ```hitl 确认块
+   ★ CP-1a — 展示全部 decision，已提取的参数用 default 预填值
+   ★ CP-1b — 展示已填写的条件 + readonly 可视化组件 + hitl 确认块
    ▼
-Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
+Phase 2  输出 apicall（inline 在 CP-1b checkpoint 中，前端直接执行）
 ```
 
 ### 关键规则
 
 - **禁止用 `input` 类型收集查询字段**——查询条件只用 `combobox` / `number_range` / `datetime_range`
+- **已提取的参数用 `default` 字段标记**，展示在 decision 中，用户可修改或跳过
 - **CP-1b hitl checkpoint 必须包含 `apicall` 字段**——前端点"执行查询"时直接执行，无需 LLM 再生成
+- **只有用户明确说"查全部"才跳过 Phase 1**，其他情况一律展示 CP-1a
 
 ---
 
@@ -131,7 +132,12 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 
 ## ★ CP-1a — 条件收集
 
-只展示**还没拿到的字段**，已提取的参数不出现在 decisions 中。每个 decision 独立，可用 `default` 推荐默认值。
+**始终展示全部决策字段**（combobox / number_range / datetime_range）。已从用户输入中提取的参数用 `default` 字段预填值，其他字段留空让用户自行填写或跳过。
+
+`default` 格式：
+- `number_range`：`"default": {"gte": 10, "lte": 100}`
+- `datetime_range`：`"default": {"gte": "2024-01-01", "lte": "2024-12-31"}`
+- `combobox`：`"default": ["数码"]`
 
 ```hitl
 {

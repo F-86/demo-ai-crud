@@ -182,22 +182,41 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
   const apicall = hitl?.checkpoint?.apicall;
   const summary = hitl?.checkpoint?.summary || '';
 
-  // 把用户提交的 reply JSON 转成 values 格式
+  // 把 decisions 的 default 值 / reply JSON 转成 values 格式
   const initValues = () => {
-    if (!readonly || !reply) return {};
-    try {
-      const parsed = JSON.parse(reply);
-      const vals = {};
-      Object.entries(parsed).forEach(([k, v]) => {
-        if (v && typeof v === 'object' && !Array.isArray(v) && ('gte' in v || 'lte' in v)) {
-          if (v.gte !== undefined) vals[`${k}__gte`] = String(v.gte);
-          if (v.lte !== undefined) vals[`${k}__lte`] = String(v.lte);
-        } else {
-          vals[k] = v;
-        }
-      });
-      return vals;
-    } catch { return {}; }
+    const vals = {};
+
+    // 从 decisions 的 default 字段预填值
+    decisions.forEach(d => {
+      if (!d.default) return;
+      const f = d.field;
+      if (!f) return;
+      if (d.type === 'number_range' || d.type === 'datetime_range') {
+        if (d.default.gte !== undefined) vals[`${f}__gte`] = String(d.default.gte);
+        if (d.default.lte !== undefined) vals[`${f}__lte`] = String(d.default.lte);
+      } else if (d.type === 'combobox') {
+        vals[f] = Array.isArray(d.default) ? d.default : [d.default];
+      } else {
+        vals[f] = d.default;
+      }
+    });
+
+    // readonly 模式下从 reply 覆盖（用户之前提交的值）
+    if (readonly && reply) {
+      try {
+        const parsed = JSON.parse(reply);
+        Object.entries(parsed).forEach(([k, v]) => {
+          if (v && typeof v === 'object' && !Array.isArray(v) && ('gte' in v || 'lte' in v)) {
+            if (v.gte !== undefined) vals[`${k}__gte`] = String(v.gte);
+            if (v.lte !== undefined) vals[`${k}__lte`] = String(v.lte);
+          } else {
+            vals[k] = v;
+          }
+        });
+      } catch { /* ignore */ }
+    }
+
+    return vals;
   };
 
   const [values, setValues] = useState(initValues);
