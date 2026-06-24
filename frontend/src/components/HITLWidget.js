@@ -95,6 +95,23 @@ function DecisionWidget({ decision, values, setValues, readonly, api }) {
     );
   }
 
+  // text_input 字段（查询场景：id / name 单行文本输入）
+  if (decision.type === 'text_input') {
+    return (
+      <div className="hitlw-decision">
+        <span className="hitlw-label">{decision.label}</span>
+        <input
+          className="hitlw-input"
+          type="text"
+          placeholder={decision.placeholder || '可选'}
+          disabled={readonly}
+          value={values[field] || ''}
+          onChange={e => setValues(v => ({ ...v, [field]: e.target.value }))}
+        />
+      </div>
+    );
+  }
+
   // input 字段（Create/Update 场景）
   if (decision.type === 'input') {
     const fields = decision.fields || [];
@@ -265,6 +282,21 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
           if (gte) range.gte = gte;
           if (lte) range.lte = lte;
           out[f] = range;
+        }
+      } else if (d.type === 'text_input') {
+        const raw = (values[f] || '').trim();
+        if (raw) {
+          if (f === 'id') {
+            // id：逗号/顿号分隔 → number[]
+            const ids = raw.split(/[,，、\s]+/).map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0);
+            if (ids.length > 0) out[f] = ids;
+          } else if (f === 'name') {
+            // name：逗号/顿号分隔 → string[]（单个时保持字符串）
+            const names = raw.split(/[,，、]+/).map(s => s.trim()).filter(Boolean);
+            out[f] = names.length === 1 ? names[0] : names;
+          } else {
+            out[f] = raw;
+          }
         }
       } else if (d.type === 'input') {
         (d.fields || []).forEach(fi => { if (values[fi.name]) out[fi.name] = values[fi.name]; });

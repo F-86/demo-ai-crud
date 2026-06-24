@@ -83,10 +83,10 @@ license: MIT
 ### 提取原则
 
 1. **能确定的就直接提取**——数值、名称、日期等明确信息，直接填入对应 decision 的 `default` 值
-2. **`id` 和 `name` 只从用户输入提取，不放进 CP-1a 表单**——用户说"查 id 为 1、3、5 的"，直接提取 `id:[1,3,5]` 放入 apicall filters；说"查 MacBook Pro"，直接提取 `name:"MacBook Pro"`。**禁止用 `input` 类型在 CP-1a 中让用户再次输入 id 或 name。**
+2. **`id` 和 `name` 用 `default` 预填到 CP-1a 的 `text_input` decision 中**——用户说"查 id 1、3、5"，把 `"1, 3, 5"` 填入 id decision 的 `default`；说"查可乐、香蕉"，把 `"可乐, 香蕉"` 填入 name decision 的 `default`
 3. **category 必须通过 combobox 让用户选择**——枚举值来自后端 `GET /api/products/categories`，不可自行猜测映射（"吃的"→"食品"不行）
 4. **拿不准的不猜**——模糊表述如"便宜的"、"最近的"不要假设数值，留给用户填写
-5. **CP-1a 只展示 category / price / created / updated 四个表单字段**——`id` 和 `name` 已从输入提取，不出现在 CP-1a decisions 中
+5. **CP-1a 展示全部六个查询参数**（id / name / category / price / created / updated）——已提取的用 `default` 预填，未提取的留空
 
 ### 时间表达式解析规则
 
@@ -150,6 +150,7 @@ CP-1a — 一次性收集
 
 | 类型 | 用途 | 示例 |
 |------|------|------|
+| `text_input` | 单行文本输入，用于 id / name | CP-1a |
 | `combobox` | 分类选择，前端拉取值 | CP-1a |
 | `number_range` | 价格范围 | CP-1a |
 | `datetime_range` | 时间范围 | CP-1a |
@@ -158,11 +159,13 @@ CP-1a — 一次性收集
 
 ## ★ CP-1a — 条件收集
 
-**始终展示全部决策字段**（combobox / number_range / datetime_range）。已从用户输入中提取的参数用 `default` 字段预填值，其他字段留空让用户自行填写或跳过。
+**始终展示全部决策字段**（text_input / combobox / number_range / datetime_range）。已从用户输入中提取的参数用 `default` 字段预填值，其他字段留空让用户自行填写或跳过。
 
 **checkpoint 必须包含 `apicall` 模板**（`filters` 留空 `{}`），前端提交时会把表单值注入 `apicall.body.filters` 后直接执行，不再发给 LLM。
 
 `default` 格式：
+- `text_input`（id）：`"default": "1, 3, 5"`
+- `text_input`（name）：`"default": "可乐"`  或多个：`"default": "可乐, 香蕉"`
 - `number_range`：`"default": {"gte": 10, "lte": 100}`
 - `datetime_range`：`"default": {"gte": "2024-01-01", "lte": "2024-12-31"}`
 - `combobox`：`"default": ["数码"]`
@@ -178,6 +181,20 @@ CP-1a — 一次性收集
     "action": "wait",
     "apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}},
     "decisions": [
+      {
+        "id": "d-0a",
+        "type": "text_input",
+        "field": "id",
+        "label": "商品ID",
+        "placeholder": "多个ID用逗号分隔（中英文逗号均可），如 1, 3, 5"
+      },
+      {
+        "id": "d-0b",
+        "type": "text_input",
+        "field": "name",
+        "label": "商品名称",
+        "placeholder": "模糊匹配，多个名称用逗号分隔（中英文逗号均可）"
+      },
       {
         "id": "d-1",
         "type": "combobox",
@@ -237,11 +254,10 @@ CP-1a — 一次性收集
 
 ## 常见错误
 
-1. **用 `input` 收集查询字段** → 查询只用 combobox / number_range / datetime_range；`id` 和 `name` 直接从用户输入提取，不放进 CP-1a 表单
-2. **在 CP-1a 中用 `input` 让用户输入 id** → 错误。用户说"帮我查 id"时，直接从输入提取 id 值；若用户没给具体值，输出 CP-1a（不含 id decision）让用户补充其他条件
-3. **非"查全部"时跳过 CP-1a** → 除非明确说"查全部/所有商品"，否则必须走 CP-1a
-4. **category 猜值映射** → 必须 combobox，禁止"吃的→食品"
-5. **模糊表述自设数值** → "便宜的"、"最近的"不猜，展示空 decision 让用户填
-6. **已提取的参数忘记设 default** → 用 `default` 字段预填，用户可跳过或修改
-7. **CP-1a 出现两次** → 一轮查询只允许一次 CP-1a
-8. **CP-1a 缺少 `apicall` 模板** → checkpoint 必须带 `"apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}}`
+1. **`id`/`name` 不用 `default` 预填** → 用户说"查可乐"，应把 `"可乐"` 填入 name decision 的 `default`，而不是只在自然语言里提到
+2. **非"查全部"时跳过 CP-1a** → 除非明确说"查全部/所有商品"，否则必须走 CP-1a
+3. **category 猜值映射** → 必须 combobox，禁止"吃的→食品"
+4. **模糊表述自设数值** → "便宜的"、"最近的"不猜，展示空 decision 让用户填
+5. **CP-1a 出现两次** → 一轮查询只允许一次 CP-1a
+6. **CP-1a 缺少 `apicall` 模板** → checkpoint 必须带 `"apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}}`
+7. **HITL 块未用 ` ```hitl ` 包裹** → 禁止裸 JSON 输出
