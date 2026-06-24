@@ -85,6 +85,30 @@ function BulkResultTable({ updated, items }) {
   );
 }
 
+function BulkDeletePreviewTable({ matched, items }) {
+  return (
+    <div>
+      <div className="apicall-card-row" style={{ marginBottom: 8 }}>
+        <span className="apicall-badge apicall-badge--danger">⚠️ 删除预览（未执行）</span>
+        <span>共匹配 <strong>{matched}</strong> 条</span>
+      </div>
+      <ProductTable products={items} />
+    </div>
+  );
+}
+
+function BulkDeleteResultTable({ deleted, items }) {
+  return (
+    <div>
+      <div className="apicall-card-row" style={{ marginBottom: 8 }}>
+        <span className="apicall-badge apicall-badge--danger">✓ 批量删除成功</span>
+        <span>共删除 <strong>{deleted}</strong> 条</span>
+      </div>
+      <ProductTable products={items} />
+    </div>
+  );
+}
+
 function ErrorBlock({ error }) {
   // 字符串错误：直接显示
   if (typeof error === 'string') {
@@ -134,6 +158,14 @@ function ApiCallResult({ apicall, result }) {
       return <BulkPreviewTable matched={result.matched} preview={result.preview || []} />;
     }
     return <BulkResultTable updated={result.updated} items={result.items || []} />;
+  }
+
+  // 批量删除：根据 dry_run 区分预览/执行
+  if (method === 'POST' && endpoint.includes('/bulk_delete')) {
+    if (result.dry_run) {
+      return <BulkDeletePreviewTable matched={result.matched} items={result.items || []} />;
+    }
+    return <BulkDeleteResultTable deleted={result.deleted} items={result.items || []} />;
   }
 
   if (method === 'POST' && endpoint.endsWith('/query')) {

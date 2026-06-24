@@ -194,7 +194,7 @@ function ReadonlyField({ decision }) {
   return null;
 }
 
-function HITLWidget({ hitl, onAction, readonly, api, reply, prevFailed }) {
+function HITLWidget({ hitl, onAction, readonly, api, reply, apicallResult, prevFailed }) {
   const decisions = hitl?.checkpoint?.decisions || [];
   const apicall = hitl?.checkpoint?.apicall;
   const summary = hitl?.checkpoint?.summary || '';
@@ -321,6 +321,52 @@ function HITLWidget({ hitl, onAction, readonly, api, reply, prevFailed }) {
     }
   };
 
+  const buildChoiceAction = (value) => {
+    if (
+      value === 'approve' &&
+      !apicall &&
+      apicallResult &&
+      typeof apicallResult === 'object' &&
+      apicallResult.matched != null
+    ) {
+      return JSON.stringify({ action: value, expected_count: apicallResult.matched });
+    }
+    return value;
+  };
+
+  const renderReplyPreview = () => {
+    if (!readonly || !reply) return null;
+
+    try {
+      const parsed = JSON.parse(reply);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed).filter(([, value]) => value !== undefined && value !== null && value !== '');
+        return (
+          <div className="hitlw-reply">
+            <span className="hitlw-label" style={{ width: '100%', marginBottom: 0 }}>你的回复</span>
+            {entries.length > 0 ? entries.map(([key, value]) => (
+              <span key={key} className="hitlw-reply-tag">
+                <span className="hitlw-reply-key">{key}:</span>
+                <span className="hitlw-reply-val">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+              </span>
+            )) : (
+              <span className="hitlw-reply--empty">已处理</span>
+            )}
+          </div>
+        );
+      }
+    } catch {
+      // ignore JSON parse error, fallback to plain text display
+    }
+
+    return (
+      <div className="hitlw-reply">
+        <span className="hitlw-label" style={{ width: '100%', marginBottom: 0 }}>你的回复</span>
+        <div className="hitlw-readonly-text" style={{ width: '100%' }}>{reply}</div>
+      </div>
+    );
+  };
+
   const currentDecision = decisions[index];
 
   return (
@@ -339,6 +385,8 @@ function HITLWidget({ hitl, onAction, readonly, api, reply, prevFailed }) {
           ))}
         </div>
       )}
+
+      {renderReplyPreview()}
 
       {/* 多 decision 轮播（combobox / number_range / datetime_range） */}
       {isMultiDecision && (
@@ -390,7 +438,7 @@ function HITLWidget({ hitl, onAction, readonly, api, reply, prevFailed }) {
             {firstDecision.options?.filter(opt => !(prevFailed && ['approve', 'confirm', 'execute'].includes(opt.value))).map((opt, i) => (
               <button key={i}
                 className={`hitlw-btn ${opt.value === 'confirm' ? 'danger' : opt.value === '取消查询' || opt.value === 'cancel' ? 'default' : 'primary'}`}
-                onClick={() => onAction(opt.value, (opt.value === 'execute' || opt.value === 'confirm') ? apicall : null)}
+                onClick={() => onAction(buildChoiceAction(opt.value), (opt.value === 'execute' || opt.value === 'confirm') ? apicall : null)}
               >{opt.label}</button>
             ))}
           </div>

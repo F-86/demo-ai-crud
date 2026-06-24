@@ -66,6 +66,9 @@ def init_db():
         conn.commit()
     else:
         # 迁移：增加 apicall / apicall_result 列（旧版本没有）
+        if "skill_name" not in cols:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN skill_name TEXT")
+            conn.commit()
         if "apicall" not in cols:
             conn.execute("ALTER TABLE chat_messages ADD COLUMN apicall TEXT")
             conn.commit()

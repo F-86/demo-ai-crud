@@ -162,7 +162,8 @@ async def execute_skill(message: str, db, history: list = [], forced_skill: Opti
         skill = registry.get_skill(skill_name)
         skill_body = await skill.get_body()
         today = date.today().strftime("%Y-%m-%d")
-        system_prompt = f"今天的日期是 {today}。\n\n{skill_body}"
+        runtime_guard = """你现在是在运行一个具体 skill，而不是复述 SKILL.md 文档。\n\n运行规则：\n1. 只输出当前这一步真正需要给用户看的内容。\n2. 一次最多输出一个 `hitl` 块，或一个 `apicall` 块；如果是删除确认这种场景，可以输出一个内嵌 `apicall` 的 `hitl` 块。\n3. 严禁把 SKILL.md 里的模板占位符原样输出给用户，例如 `<id>`、`<商品ID>`、`<参数>`、`{{id}}`、`[...]`。\n4. 如果某个值还不知道，先收集它；不要提前输出带占位符的确认块或 apicall。\n5. 不要抄写或复述 SKILL.md 里的示例、模板、Checklist、Pitfalls；你要生成的是当前对话这一步的实际结果。\n6. 需要用户补参数时，优先按 skill 规则输出 `hitl` 块，不要只用自然语言提问。"""
+        system_prompt = f"今天的日期是 {today}。\n\n{runtime_guard}\n\n{skill_body}"
         messages = [{"role": "system", "content": system_prompt}]
         for h in history[-20:]:  # 最近 10 轮对话历史
             role = "user" if h["role"] == "user" else "assistant"

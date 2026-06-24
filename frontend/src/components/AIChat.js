@@ -4,15 +4,35 @@ import ApiCallResult from './ApiCallResult';
 import HITLWidget from './HITLWidget';
 
 const SUGGESTIONS = ['查一下所有商品', '帮我添加一个商品', '修改商品信息', '删除一个商品'];
+const INLINE_HITL_ACTIONS = new Set(['approve', 'confirm', 'execute', 'cancel', 'refine', 'modify']);
 
 function cleanMessageText(m) {
   if (!m.text) return '';
   let text = m.text;
-  // 去除代码块（filters / hitl / apicall）
+  // 去除代码块（filters / hitl / apicall / text-json）
   text = text.split('```filters')[0];
   text = text.split('```hitl')[0];
   text = text.split('```apicall')[0];
+  text = text.split('```text')[0];
   return text.trim();
+}
+
+function parseStructuredHitlReply(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isInlineHitlReply(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return false;
+  if (INLINE_HITL_ACTIONS.has(trimmed)) return true;
+  return !!parseStructuredHitlReply(trimmed);
 }
 
 async function executeApicall(api, apicall) {
@@ -262,13 +282,15 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
             const skip = new Set();
             return messages.map((msg, i) => {
               if (skip.has(i)) return null;
-              // AI 消息有已处理的 hitl，把下一条 user 消息内嵌
+              // AI 消息有已处理的 hitl 时，仅把内部回执（JSON / 动作值）内嵌；自然语言保留为独立用户气泡
               let hitlReply = null;
               if (msg.role === 'ai' && msg.hitl) {
                 const isReadonly = !(pendingHITL && i === messages.length - 1);
                 const next = messages[i + 1];
-                if (isReadonly && next?.role === 'user') {
-                  hitlReply = next.text;
+                if (isReadonly && next?.role === 'user' && isInlineHitlReply(next.text)) {
+                  if (parseStructuredHitlReply(next.text)) {
+                    hitlReply = next.text;
+                  }
                   skip.add(i + 1);
                 }
               }
@@ -291,6 +313,7 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
                         onAction={handleHITLAction}
                         api={api}
                         reply={hitlReply}
+                        apicallResult={msg.apicallResult}
                         prevFailed={!!(msg.apicall && msg.apicallResult && msg.apicallResult.error !== undefined)}
                       />
                     )}

@@ -441,6 +441,79 @@ def bulk_update_products(body: dict):
     return {"dry_run": False, "updated": len(updated_ids), "items": items}
 
 
+@app.post("/api/products/bulk_delete")
+def bulk_delete_products(body: dict):
+    """按 filters 批量删除商品。
+
+    Body:
+        {
+            "filters": {...},      # 同 /api/products/query 的 filter 协议
+            "dry_run": true|false, # 默认 false。true 时只返回匹配列表，不删除
+            "expected_count": int  # 可选。非 dry_run 且提供时，匹配数与之不一致则 409
+        }
+
+    Response:
+        - dry_run=true:
+            {
+                "dry_run": true,
+                "matched": N,
+                "items": [...匹配商品]
+            }
+        - dry_run=false:
+            {
+                "dry_run": false,
+                "deleted": N,
+                "items": [...被删除商品]
+            }
+    """
+    filters = body.get("filters") or {}
+    dry_run = bool(body.get("dry_run", False))
+    expected_count = body.get("expected_count")
+
+    if not filters:
+        raise HTTPException(400, "filters 不能为空（避免误删全表）")
+
+    where, params = _build_filter_sql(filters)
+    conn = db()
+    rows = conn.execute(
+        f"SELECT * FROM products WHERE 1=1{where} ORDER BY id ASC", params
+    ).fetchall()
+    matched = len(rows)
+
+    if matched == 0:
+        conn.close()
+        raise HTTPException(404, "未匹配到任何商品，filters 无结果")
+
+    items = [dict(r) for r in rows]
+
+    if dry_run:
+        conn.close()
+        return {"dry_run": True, "matched": matched, "items": items}
+
+    if expected_count is not None and int(expected_count) != matched:
+        conn.close()
+        raise HTTPException(
+            409,
+            {
+                "error": "count_mismatch",
+                "message": f"匹配数 {matched} 与预期 {expected_count} 不一致，操作已中止",
+                "matched": matched,
+                "expected": int(expected_count),
+            },
+        )
+
+    delete_ids = [r["id"] for r in rows]
+    placeholders = ",".join("?" * len(delete_ids))
+    conn.execute(f"DELETE FROM products WHERE id IN ({placeholders})", delete_ids)
+    conn.commit()
+
+    # TODO(audit): 此处可接入审计日志，记录 deleted_ids/operator/timestamp
+    print(f"[bulk_delete] filters={filters} deleted_ids={delete_ids}")
+
+    conn.close()
+    return {"dry_run": False, "deleted": len(delete_ids), "items": items}
+
+
 @app.delete("/api/products/{pid}")
 def delete_product(pid: int):
     conn = db()
@@ -647,16 +720,16 @@ async def execute_skill(body: dict):
     ).fetchall()
     history = [{"role": r["role"], "text": r["text"]} for r in history_rows]
 
-    # HITL 响应：从历史中取上一条 AI 消息所用的 skill，跳过重新路由
+    # HITL 响应：优先复用上一条 AI 消息记录下来的 skill_name，避免靠文本猜测导致串 skill
     forced_skill = None
     if is_hitl_response:
         last_skill_row = conn.execute(
-            """SELECT text FROM chat_messages WHERE session_id=? AND role='ai'
+            """SELECT text, skill_name FROM chat_messages WHERE session_id=? AND role='ai'
                ORDER BY id DESC LIMIT 1""",
             (session_id,)
         ).fetchone()
         if last_skill_row:
-            forced_skill = await skill_framework.detect_skill_from_reply(last_skill_row["text"])
+            forced_skill = last_skill_row["skill_name"] or await skill_framework.detect_skill_from_reply(last_skill_row["text"])
 
     result = await skill_framework.execute_skill(message, conn, history=history, forced_skill=forced_skill)
     reply = result.get("reply", "")
@@ -670,6 +743,20 @@ async def execute_skill(body: dict):
             hitl_json = json.loads(hitl_part)
         except Exception:
             pass
+
+    # 兼容：LLM 偶尔把 HITL / apicall JSON 包在 ```text 代码块里
+    text_block_json = None
+    if reply and "```text" in reply:
+        try:
+            text_part = reply.split("```text")[1].split("```")[0]
+            stripped_text = text_part.strip()
+            if stripped_text.startswith("{"):
+                text_block_json = json.loads(stripped_text)
+        except Exception:
+            pass
+
+    if not hitl_json and text_block_json and "checkpoint" in text_block_json:
+        hitl_json = text_block_json
 
     # 兜底：LLM 有时直接输出裸 JSON（没有 ```hitl 包裹），尝试解析整个回复
     if not hitl_json and reply:
@@ -687,6 +774,9 @@ async def execute_skill(body: dict):
         except Exception:
             pass
 
+    if not apicall_json and text_block_json and "method" in text_block_json:
+        apicall_json = text_block_json
+
     # 如果已解析到 hitl，不再把 hitl 内部的 apicall 字段单独提取为顶层 apicall
     if not hitl_json and not apicall_json and reply:
         stripped = reply.strip()
@@ -697,9 +787,10 @@ async def execute_skill(body: dict):
                 pass
 
     conn.execute(
-        "INSERT INTO chat_messages (session_id, role, text, hitl, apicall) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO chat_messages (session_id, role, text, hitl, skill_name, apicall) VALUES (?, ?, ?, ?, ?, ?)",
         (session_id, "ai", reply,
          json.dumps(hitl_json, ensure_ascii=False) if hitl_json else None,
+         result.get("skill"),
          json.dumps(apicall_json, ensure_ascii=False) if apicall_json else None)
     )
     conn.execute(
