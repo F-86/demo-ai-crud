@@ -262,7 +262,7 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
             {firstDecision.options?.map((opt, i) => (
               <button key={i}
                 className={`hitlw-btn ${opt.value === 'confirm' ? 'danger' : opt.value === '取消查询' || opt.value === 'cancel' ? 'default' : 'primary'}`}
-                onClick={() => onAction(opt.value, opt.value === 'confirm' ? apicall : null)}
+                onClick={() => onAction(opt.value, (opt.value === 'execute' || opt.value === 'confirm') ? apicall : null)}
               >{opt.label}</button>
             ))}
           </div>

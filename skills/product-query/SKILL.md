@@ -114,8 +114,7 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 ### 关键规则
 
 - **禁止用 `input` 类型收集查询字段**——查询条件只用 `combobox` / `number_range` / `datetime_range`
-- **CP-1b 必须输出 `filters` 块**——为 Phase 2 提供可复制的精确 JSON
-- **Phase 2 禁止凭记忆构造 filters**——必须从上一轮的 `filters` 块逐字复制
+- **CP-1b hitl checkpoint 必须包含 `apicall` 字段**——前端点"执行查询"时直接执行，无需 LLM 再生成
 
 ---
 
@@ -192,7 +191,7 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 输出格式（严格按此顺序）：
 1. 自然语言条件摘要 + 问句
 2. ```filters 完整 JSON 块
-3. ```hitl 确认块
+3. ```hitl 确认块，**checkpoint 中必须包含 `apicall` 字段**（前端点"执行查询"时直接执行，无需再问 LLM）
 
 示例（用户输入"价格 10-100"，提取后）：
 
@@ -210,8 +209,9 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
     "id": "cp-1b",
     "name": "查询条件确认",
     "phase": "Phase 1",
-    "summary": "已收集查询条件，请确认后执行查询",
+    "summary": "已收集查询条件：价格≥10元且≤100元，请确认后执行查询",
     "action": "wait",
+    "apicall": {"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {"price": {"gte": 10, "lte": 100}}}},
     "decisions": [
       {
         "id": "d-1",
@@ -231,18 +231,18 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 
 ### 用户选择路由
 
-- `execute` → Phase 2，从上一轮 `filters` 块逐字复制并填入 apicall
+- `execute` → 前端直接使用 checkpoint 中的 `apicall` 执行查询，**无需再经 LLM**
 - `重新填写查询条件` → 返回 CP-1a
 - `取消查询` → 结束
 
 ---
 
-## Phase 2 — 执行
+## Phase 2 — 执行（仅全量查询使用）
 
-输出 apicall 块：
+当用户意图为全量查询时，直接输出 apicall 块：
 
 ```apicall
-{"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {"price": {"gte": 10, "lte": 100}}}}
+{"method": "POST", "endpoint": "/api/products/query", "body": {"filters": {}}}
 ```
 
 结果由前端渲染表格（id / 名称 / 分类 / 价格 / 上架时间 / 更新时间），agent 不描述数据。
@@ -251,9 +251,9 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 
 ## 常见错误
 
-1. **凭记忆构造 apicall** → 必须从 `filters` 块逐字复制
-2. **用 `input` 收集查询字段** → 查询只用 combobox / number_range / datetime_range
-3. **全量查询触发 CP-1a** → `filters: {}` 直接 Phase 2
+1. **用 `input` 收集查询字段** → 查询只用 combobox / number_range / datetime_range
+2. **全量查询触发 CP-1a** → `filters: {}` 直接 Phase 2
+3. **CP-1b 漏写 `apicall`** → checkpoint 内必须包含完整 apicall JSON
 4. **category 猜值映射** → 必须 combobox，禁止"吃的→食品"
 5. **模糊表述自设数值** → "便宜的"、"最近的"不猜
 6. **已提取的参数重复展示 decision** → 只对缺失的字段展示

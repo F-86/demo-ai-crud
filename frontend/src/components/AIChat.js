@@ -138,8 +138,8 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
 
   const handleHITLAction = async (action, apicall) => {
     setPendingHITL(null);
-    if (action === 'confirm' && apicall) {
-      // 删除确认：直接执行 apicall，无需再发消息
+    if (apicall && (action === 'confirm' || action === 'execute')) {
+      // 直接执行 apicall（删除确认 / CP-1b 查询确认），无需再发消息
       const pendingMsg = { role: 'ai', text: '', apicall, apicallResult: null };
       setMessages(prev => [...prev, pendingMsg]);
       const result = await executeApicall(api, apicall);
