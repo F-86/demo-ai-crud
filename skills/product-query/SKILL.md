@@ -190,17 +190,12 @@ Phase 2  输出 apicall（filters 从上一轮 ```filters 块逐字复制）
 
 输出格式（严格按此顺序）：
 1. 自然语言条件摘要 + 问句
-2. ```filters 完整 JSON 块
-3. ```hitl 确认块，**checkpoint 中必须包含 `apicall` 字段**（前端点"执行查询"时直接执行，无需再问 LLM）
+2. ```hitl 确认块，**checkpoint 中必须包含 `apicall` 字段**（前端点"执行查询"时直接执行，无需再问 LLM）
 
 示例（用户输入"价格 10-100"，提取后）：
 
 ```text
 将按 价格≥10元且≤100元 查询商品，确认吗？
-
-```filters
-{"price": {"gte": 10, "lte": 100}}
-```
 
 ```hitl
 {

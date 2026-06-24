@@ -348,5 +348,24 @@ async def save_apicall_result(msg_id: int, request: Request):
     conn.close()
     return {"ok": True}
 
+@app.post("/api/chat/sessions/{sid}/apicall_from_hitl")
+async def save_apicall_from_hitl(sid: int, request: Request):
+    """将 HITL 触发的 apicall 执行结果持久化为一条新消息"""
+    body = await request.json()
+    conn = db()
+    apicall_json = json.dumps(body["apicall"], ensure_ascii=False) if body.get("apicall") else None
+    result_json = json.dumps(body.get("result"), ensure_ascii=False) if body.get("result") else None
+    conn.execute(
+        "INSERT INTO chat_messages (session_id, role, text, apicall, apicall_result) VALUES (?, ?, ?, ?, ?)",
+        (sid, "ai", "", apicall_json, result_json)
+    )
+    conn.execute(
+        "UPDATE chat_sessions SET updated=datetime('now','localtime') WHERE id=?",
+        (sid,)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

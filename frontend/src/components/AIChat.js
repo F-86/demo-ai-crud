@@ -5,6 +5,16 @@ import HITLWidget from './HITLWidget';
 
 const SUGGESTIONS = ['查一下所有商品', '帮我添加一个商品', '修改商品信息', '删除一个商品'];
 
+function cleanMessageText(m) {
+  if (!m.text) return '';
+  let text = m.text;
+  // 去除代码块（filters / hitl / apicall）
+  text = text.split('```filters')[0];
+  text = text.split('```hitl')[0];
+  text = text.split('```apicall')[0];
+  return text.trim();
+}
+
 async function executeApicall(api, apicall) {
   const { method, endpoint, body } = apicall;
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -31,7 +41,7 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       const data = await res.json();
       const mapped = data.map(m => ({
         role: m.role,
-        text: m.hitl ? m.text.split('```hitl')[0] : (m.apicall ? m.text.split('```apicall')[0] : m.text),
+        text: cleanMessageText(m),
         hitl: m.hitl || null,
         apicall: m.apicall || null,
         apicallResult: m.apicall_result || null,
@@ -103,7 +113,7 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       // 解析 hitl
       if (data.hitl) {
         msg.hitl = data.hitl;
-        msg.text = msg.text.split('```hitl')[0];
+        msg.text = cleanMessageText({ text: msg.text, hitl: data.hitl });
         setPendingHITL(data.hitl);
       }
 
@@ -146,6 +156,12 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
       setMessages(prev => prev.map((m, i) =>
         i === prev.length - 1 ? { ...m, apicallResult: result } : m
       ));
+      // 持久化到数据库，刷新后不再重复显示 HITL 按钮
+      fetch(`${api}/api/chat/sessions/${sessionId}/apicall_from_hitl`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apicall, result }),
+      }).catch(() => {});
     } else if (action !== 'cancel' && action !== '取消查询') {
       await sendMessage(action, { hitl_response: true });
     }
