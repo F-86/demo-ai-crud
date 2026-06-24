@@ -6,6 +6,7 @@ Skill framework — 基于 agentskills-core + agentskills-fs。
 """
 
 import os
+from datetime import date
 from pathlib import Path
 from typing import Optional
 from openai import OpenAI
@@ -160,7 +161,9 @@ async def execute_skill(message: str, db, history: list = [], forced_skill: Opti
     try:
         skill = registry.get_skill(skill_name)
         skill_body = await skill.get_body()
-        messages = [{"role": "system", "content": skill_body}]
+        today = date.today().strftime("%Y-%m-%d")
+        system_prompt = f"今天的日期是 {today}。\n\n{skill_body}"
+        messages = [{"role": "system", "content": system_prompt}]
         for h in history[-20:]:  # 最近 10 轮对话历史
             role = "user" if h["role"] == "user" else "assistant"
             messages.append({"role": role, "content": h["text"]})
