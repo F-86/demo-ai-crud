@@ -148,6 +148,26 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
 
   const handleHITLAction = async (action, apicall) => {
     setPendingHITL(null);
+
+    // 检测 CP-1a 提交的 filters JSON（直接执行查询，无需再问 LLM）
+    let cp1aFilters = null;
+    try { cp1aFilters = JSON.parse(action); } catch {}
+    if (typeof cp1aFilters === 'object' && cp1aFilters !== null) {
+      const queryApicall = { method: 'POST', endpoint: '/api/products/query', body: { filters: cp1aFilters } };
+      const pendingMsg = { role: 'ai', text: '', apicall: queryApicall, apicallResult: null };
+      setMessages(prev => [...prev, pendingMsg]);
+      const result = await executeApicall(api, queryApicall);
+      setMessages(prev => prev.map((m, i) =>
+        i === prev.length - 1 ? { ...m, apicallResult: result } : m
+      ));
+      // 持久化
+      fetch(`${api}/api/chat/sessions/${sessionId}/apicall_from_hitl`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apicall: queryApicall, result }),
+      }).catch(() => {});
+      return;
+    }
+
     if (apicall && (action === 'confirm' || action === 'execute')) {
       // 直接执行 apicall（删除确认 / CP-1b 查询确认），无需再发消息
       const pendingMsg = { role: 'ai', text: '', apicall, apicallResult: null };
