@@ -277,9 +277,11 @@ function HITLWidget({ hitl, onAction, readonly, api, reply }) {
     const out = buildFilters();
     // 如果 checkpoint 带有 apicall 模板（如 product-query），直接填入 filters 并执行
     if (apicall) {
+      // 保留 apicall 里 LLM 预填的字段（如 id、name），再叠加表单填写的字段
+      const baseFilters = apicall.body?.filters || {};
       const filledApicall = {
         ...apicall,
-        body: { ...apicall.body, filters: out },
+        body: { ...apicall.body, filters: { ...baseFilters, ...out } },
       };
       onAction('execute', filledApicall);
     } else {

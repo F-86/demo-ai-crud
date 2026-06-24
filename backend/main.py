@@ -307,12 +307,30 @@ async def execute_skill(body: dict):
         except Exception:
             pass
 
+    # 兜底：LLM 有时直接输出裸 JSON（没有 ```hitl 包裹），尝试解析整个回复
+    if not hitl_json and reply:
+        stripped = reply.strip()
+        if stripped.startswith("{") and '"checkpoint"' in stripped:
+            try:
+                hitl_json = json.loads(stripped)
+            except Exception:
+                pass
+
     if reply and "```apicall" in reply:
         try:
             apicall_part = reply.split("```apicall")[1].split("```")[0]
             apicall_json = json.loads(apicall_part)
         except Exception:
             pass
+
+    # 如果已解析到 hitl，不再把 hitl 内部的 apicall 字段单独提取为顶层 apicall
+    if not hitl_json and not apicall_json and reply:
+        stripped = reply.strip()
+        if stripped.startswith("{") and '"method"' in stripped:
+            try:
+                apicall_json = json.loads(stripped)
+            except Exception:
+                pass
 
     conn.execute(
         "INSERT INTO chat_messages (session_id, role, text, hitl, apicall) VALUES (?, ?, ?, ?, ?)",
