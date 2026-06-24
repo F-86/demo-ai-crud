@@ -105,7 +105,11 @@ Phase 0  提取已明确的参数
    ▼
 Phase 1  补全参数
    ★ CP-1a — 展示全部 decision，已提取的参数用 default 预填
-   用户点击【提交】→ 发消息给后端 → 进入 CP-1b
+   用户点击【提交】→ 前端把表单数据序列化为 JSON 字符串发回后端
+   ▼
+路由识别：判断当前用户消息是"新查询意图"还是"CP-1a 提交结果"
+   ├─ 新查询意图：含查询语义（查/找/列出/搜索）→ 进入 Phase 1 重新走 CP-1a
+   └─ CP-1a 提交结果：JSON 字符串（以 `{` 开头）→ **必须直接进入 CP-2 输出 CP-1b**
    ▼
 Phase 2  确认 & 执行
    ★ CP-1b — 展示已收集的条件（自然语言 + readonly 组件）+ hitl 确认块
@@ -116,6 +120,7 @@ Phase 2  确认 & 执行
 
 - **禁止用 `input` 类型收集查询字段**——查询条件只用 `combobox` / `number_range` / `datetime_range`
 - **已提取的参数用 `default` 字段预填**，用户可修改或跳过
+- **CP-1a 提交后必须输出 CP-1b**——不要输出任何自然语言询问，直接用 JSON 中的字段构造 readonly + choice + apicall
 - **CP-1b hitl checkpoint 必须包含 `apicall`**——前端直接执行，无需再问 LLM
 - **只有用户明确说"查全部"才跳过 Phase 1**，其他情况一律展示 CP-1a
 
@@ -197,9 +202,24 @@ Phase 2  确认 & 执行
 
 ## ★ CP-1b — 条件确认
 
-CP-1a 提交后，用自然语言列出条件 + readonly 可视化组件 + hitl 确认块。**checkpoint 必须包含 `apicall`**。
+### 触发条件
 
-示例（价格 10-100）：
+当**当前用户消息是 JSON 字符串**（以 `{` 开头，如 `{"price":{"gte":10,"lte":100}}`）时，这是 CP-1a 表单的提交结果。**不要输出任何自然语言询问，直接输出 CP-1b**。
+
+构造方法：
+- 把 JSON 中每个非空字段映射为一个 `readonly` decision
+- 添加一个 `choice` decision 包含"执行/重填/取消"三个选项
+- 把 JSON 完整填入 `checkpoint.apicall.body.filters`
+
+### 输出格式
+
+严格按此顺序：
+1. 一句自然语言引导（如"请确认查询条件："）
+2. ```hitl 确认块（含 readonly + choice + apicall）
+
+**绝对禁止**在 CP-1b 之前输出多余的询问/建议文字。
+
+### 示例（用户提交 `{"price":{"gte":10,"lte":100}}`）
 
 ```text
 请确认查询条件：
