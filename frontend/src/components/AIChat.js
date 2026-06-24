@@ -17,9 +17,42 @@ function cleanMessageText(m) {
 
 async function executeApicall(api, apicall) {
   const { method, endpoint, body } = apicall;
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${api}${endpoint}`, opts);
+  const upperMethod = (method || 'GET').toUpperCase();
+  let url = `${api}${endpoint}`;
+  const opts = { method: upperMethod, headers: { 'Content-Type': 'application/json' } };
+
+  if (upperMethod === 'GET' || upperMethod === 'HEAD') {
+    // GET/HEAD 不能有 body，将 filters 转为 query params
+    if (body && Object.keys(body).length > 0) {
+      const f = body.filters || body;
+      const params = new URLSearchParams();
+      const rangeMap = {
+        price: ['price_min', 'price_max'],
+        created: ['created_after', 'created_before'],
+        updated: ['updated_after', 'updated_before'],
+      };
+      Object.entries(f).forEach(([key, val]) => {
+        if (val == null) return;
+        if (rangeMap[key] && typeof val === 'object' && !Array.isArray(val)) {
+          if (val.gte != null) params.set(rangeMap[key][0], val.gte);
+          if (val.lte != null) params.set(rangeMap[key][1], val.lte);
+        } else if (Array.isArray(val)) {
+          params.set(key, val[0]);
+        } else if (typeof val === 'object') {
+          if (val.gte != null) params.set(key + '_min', val.gte);
+          if (val.lte != null) params.set(key + '_max', val.lte);
+        } else {
+          params.set(key, val);
+        }
+      });
+      const qs = params.toString();
+      if (qs) url += (url.includes('?') ? '&' : '?') + qs;
+    }
+  } else {
+    if (body) opts.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(url, opts);
   const data = await res.json();
   if (!res.ok) return { error: data.detail || `请求失败 (${res.status})` };
   return data;
@@ -169,22 +202,26 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
 
   const [copiedIdx, setCopiedIdx] = useState(null);
 
-  const copyMessage = (msg, i) => {
+  const copyMessage = async (msg, i) => {
     const text = msg.text || '';
     const onSuccess = () => {
       setCopiedIdx(i);
       setTimeout(() => setCopiedIdx(null), 1500);
     };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
-        fallbackCopy(text, onSuccess);
-      });
-    } else {
-      fallbackCopy(text, onSuccess);
+    try {
+      if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        fallbackCopy(text);
+      }
+      onSuccess();
+    } catch (e) {
+      fallbackCopy(text);
+      onSuccess();
     }
   };
 
-  const fallbackCopy = (text, onSuccess) => {
+  const fallbackCopy = (text) => {
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -193,7 +230,6 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
     ta.select();
     try {
       document.execCommand('copy');
-      onSuccess();
     } catch (e) { /* ignore */ }
     document.body.removeChild(ta);
   };
