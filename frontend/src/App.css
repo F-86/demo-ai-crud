@@ -515,6 +515,18 @@ body {
   margin-top: 4px;
 }
 .gpt-row--user .msg-actions { justify-content: flex-end; }
+.gpt-row--system {
+  justify-content: center;
+  padding: 4px 0;
+}
+.gpt-cancel-tip {
+  font-size: 12px;
+  color: var(--text-dim);
+  opacity: 0.7;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: transparent;
+}
 .msg-copy-btn {
   background: transparent;
   border: none;

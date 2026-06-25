@@ -101,8 +101,10 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
         msgId: m.id || null,
       }));
       setMessages(mapped);
+      // 仅当最后一条是带 hitl 的 AI 消息且未被取消时，才视为待响应
       const last = mapped[mapped.length - 1];
       if (last?.role === 'ai' && last?.hitl) setPendingHITL(last.hitl);
+      else setPendingHITL(null);
 
       // 自动补跑缺少结果的 apicall
       const missing = mapped
@@ -215,7 +217,18 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apicall, result }),
       }).catch(() => {});
-    } else if (action !== 'cancel' && action !== '取消查询') {
+    } else if (action === 'cancel' || action === '取消查询') {
+      // 用户取消：持久化一条仅供前端渲染的标记消息，不透传给 LLM
+      // 持久化后刷新页面时，最后一条不再是带 hitl 的 AI 消息，
+      // 上一条 HITL 卡片会自动进入 readonly 状态（按钮消失）
+      const lastAiMsgId = [...messages].reverse().find(m => m.role === 'ai' && m.msgId && m.hitl)?.msgId;
+      setMessages(prev => [...prev, { role: 'user', text: '', hitl: { cancelled: true } }]);
+      fetch(`${api}/api/chat/sessions/${sessionId}/hitl_cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ for_msg_id: lastAiMsgId || null }),
+      }).catch(() => {});
+    } else {
       await sendMessage(action, { hitl_response: true });
     }
   };
@@ -282,6 +295,16 @@ function AIChat({ api, sessionId, onTitleUpdate }) {
             const skip = new Set();
             return messages.map((msg, i) => {
               if (skip.has(i)) return null;
+
+              // HITL 取消标记：仅前端渲染一行轻量提示，不显示气泡 / 复制按钮
+              if (msg.role === 'user' && msg.hitl?.cancelled) {
+                return (
+                  <div key={i} className="gpt-row gpt-row--system">
+                    <div className="gpt-cancel-tip">已取消上一步操作</div>
+                  </div>
+                );
+              }
+
               // AI 消息有已处理的 hitl 时，仅把内部回执（JSON / 动作值）内嵌；自然语言保留为独立用户气泡
               let hitlReply = null;
               if (msg.role === 'ai' && msg.hitl) {

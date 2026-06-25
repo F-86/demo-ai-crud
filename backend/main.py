@@ -714,8 +714,9 @@ async def execute_skill(body: dict):
         )
         conn.commit()
 
+    # 注意：过滤掉 text 为空的纯前端标记消息（如 HITL 取消标记），不透传给 LLM
     history_rows = conn.execute(
-        "SELECT role, text FROM chat_messages WHERE session_id=? ORDER BY id ASC LIMIT 20",
+        "SELECT role, text FROM chat_messages WHERE session_id=? AND text != '' ORDER BY id ASC LIMIT 20",
         (session_id,)
     ).fetchall()
     history = [{"role": r["role"], "text": r["text"]} for r in history_rows]
@@ -820,6 +821,38 @@ async def save_apicall_result(msg_id: int, request: Request):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+@app.post("/api/chat/sessions/{sid}/hitl_cancel")
+async def save_hitl_cancel(sid: int, request: Request):
+    """用户在 HITL 卡片上点击"取消"时，写一条仅用于前端渲染的标记消息。
+
+    设计要点：
+    - 持久化为 role='user'、text='' 的消息，hitl 字段存 {"cancelled": true, ...}。
+    - text 为空 ⇒ history 抓取时会被自然过滤（见 execute_skill 中 WHERE text != ''），
+      因此该消息**不会透传给 LLM**，仅供前端识别"上一条 HITL 已被用户取消"，
+      从而把对应的 HITL 卡片渲染为只读、隐藏按钮。
+    """
+    body = await request.json() if await request.body() else {}
+    payload = {"cancelled": True}
+    if isinstance(body, dict):
+        if body.get("for_msg_id") is not None:
+            payload["for_msg_id"] = body["for_msg_id"]
+        if body.get("reason"):
+            payload["reason"] = body["reason"]
+    conn = db()
+    conn.execute(
+        "INSERT INTO chat_messages (session_id, role, text, hitl) VALUES (?, ?, ?, ?)",
+        (sid, "user", "", json.dumps(payload, ensure_ascii=False))
+    )
+    conn.execute(
+        "UPDATE chat_sessions SET updated=datetime('now','localtime') WHERE id=?",
+        (sid,)
+    )
+    conn.commit()
+    msg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"ok": True, "id": msg_id}
+
 
 @app.post("/api/chat/sessions/{sid}/apicall_from_hitl")
 async def save_apicall_from_hitl(sid: int, request: Request):
